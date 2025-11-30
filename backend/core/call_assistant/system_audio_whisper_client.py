@@ -19,13 +19,16 @@ class SystemAudioWhisperClient:
     WhisperClient modified to transcribe system audio instead of microphone.
     
     Usage: 
-    client = SystemAudioWhisperClient()
+    client = SystemAudioWhisperClient(on_phrase_complete=callback_function)
     client.start() - start the transcription 
-    client.get_transcription() - get the words already transcripted
+    client.pause() - pause transcription
+    client.resume() - resume transcription
     client.stop() - stop transcribing
     """
     def __init__(self, model="medium", non_english=False, energy_threshold=1000,
-                 record_timeout=2, phrase_timeout=3):
+                 record_timeout=0.5, phrase_timeout=3, on_phrase_complete=None,
+                 silence_threshold=0.002):  # silence_threshold should be between 0.005 - 0.02)
+                                             # Ends to early = increase, vice versa
         """
         Initialize the transcription service.
         
@@ -35,19 +38,25 @@ class SystemAudioWhisperClient:
             energy_threshold: Energy level to detect audio (not used for system audio, kept for compatibility)
             record_timeout: How real time the recording is in seconds
             phrase_timeout: Empty space between recordings before new line
+            on_phrase_complete: Callback function(text) called when a phrase is complete
+            silence_threshold: Audio level below this is considered silence (0-1 range)
         """
         self.model_name = model
         self.non_english = non_english
         self.energy_threshold = energy_threshold
         self.record_timeout = record_timeout
         self.phrase_timeout = phrase_timeout
+        self.on_phrase_complete = on_phrase_complete
+        self.silence_threshold = silence_threshold  # NEW
         
         # State variables
-        self.phrase_time = None
+        self.last_speech_time = None  # NEW: track when we last heard speech
         self.data_queue = Queue()
         self.phrase_bytes = bytes()
         self.transcription = ['']
+        self.last_transcription = ''  # NEW: to prevent unnecessary display updates
         self.is_running = False
+        self.is_paused = False
         self.transcription_thread = None
         self.audio_capture_thread = None
         
@@ -147,29 +156,42 @@ class SystemAudioWhisperClient:
             print(f"Audio capture started (rate: {source_rate}Hz, channels: {channels})")
             
             while self.is_running:
-                # Read audio data
-                data = self.stream.read(1024, exception_on_overflow=False)
-                
-                # Convert to numpy array
-                audio_array = np.frombuffer(data, dtype=np.int16)
-                
-                # If stereo, convert to mono by averaging channels
-                if channels > 1:
-                    audio_array = audio_array.reshape(-1, channels)
-                    audio_array = audio_array.mean(axis=1).astype(np.int16)
-                
-                # Resample to 16kHz if needed
-                if source_rate != target_rate:
-                    # Simple resampling (you might want to use a library like resampy for better quality)
-                    num_samples = int(len(audio_array) * target_rate / source_rate)
-                    audio_array = np.interp(
-                        np.linspace(0, len(audio_array), num_samples),
-                        np.arange(len(audio_array)),
-                        audio_array
-                    ).astype(np.int16)
-                
-                # Convert back to bytes and add to queue
-                self.data_queue.put(audio_array.tobytes())
+                # Only capture audio if not paused
+                if not self.is_paused:
+                    # Read audio data
+                    data = self.stream.read(1024, exception_on_overflow=False)
+                    
+                    # Convert to numpy array
+                    audio_array = np.frombuffer(data, dtype=np.int16)
+                    
+                    # If stereo, convert to mono by averaging channels
+                    if channels > 1:
+                        audio_array = audio_array.reshape(-1, channels)
+                        audio_array = audio_array.mean(axis=1).astype(np.int16)
+                    
+                    # Resample to 16kHz if needed
+                    if source_rate != target_rate:
+                        # Simple resampling (you might want to use a library like resampy for better quality)
+                        num_samples = int(len(audio_array) * target_rate / source_rate)
+                        audio_array = np.interp(
+                            np.linspace(0, len(audio_array), num_samples),
+                            np.arange(len(audio_array)),
+                            audio_array
+                        ).astype(np.int16)
+                    
+                    # Check audio level to detect speech vs silence
+                    audio_float = audio_array.astype(np.float32) / 32768.0
+                    audio_level = np.sqrt(np.mean(audio_float**2))
+                    
+                    # Convert back to bytes and add to queue with level info
+                    self.data_queue.put({
+                        'data': audio_array.tobytes(),
+                        'level': audio_level,
+                        'timestamp': datetime.utcnow()
+                    })
+                else:
+                    # When paused, just sleep a bit
+                    sleep(0.1)
                 
         except Exception as e:
             if self.is_running:
@@ -181,45 +203,92 @@ class SystemAudioWhisperClient:
         """Main transcription loop that runs in a separate thread."""
         while self.is_running:
             try:
+                # Skip processing if paused
+                if self.is_paused:
+                    sleep(0.25)
+                    continue
+                
                 now = datetime.utcnow()
                 
                 if not self.data_queue.empty():
-                    phrase_complete = False
+                    # Get all audio chunks from queue
+                    chunks = []
+                    has_speech = False
+                    latest_timestamp = None
                     
-                    # Check if phrase is complete
-                    if self.phrase_time and now - self.phrase_time > timedelta(seconds=self.phrase_timeout):
-                        self.phrase_bytes = bytes()
-                        phrase_complete = True
+                    while not self.data_queue.empty():
+                        chunk = self.data_queue.get()
+                        
+                        # Check if this chunk contains speech (above silence threshold)
+                        if chunk['level'] > self.silence_threshold:
+                            has_speech = True
+                            self.last_speech_time = chunk['timestamp']
+                            chunks.append(chunk['data'])  # Only add if above threshold
+                        
+                        latest_timestamp = chunk['timestamp']
                     
-                    self.phrase_time = now
-                    
-                    # Combine audio data from queue
-                    audio_data = b''.join(list(self.data_queue.queue))
-                    self.data_queue.queue.clear()
-                    
-                    # Add to accumulated phrase data
-                    self.phrase_bytes += audio_data
+                    # Only process if we actually have speech chunks
+                    if chunks:
+                        # Combine all audio data
+                        audio_data = b''.join(chunks)
+                        
+                        # Add to accumulated phrase data
+                        self.phrase_bytes += audio_data
                     
                     # Convert to numpy array
-                    audio_np = np.frombuffer(self.phrase_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-                    
-                    # Only transcribe if we have enough audio (at least 0.5 seconds)
-                    if len(audio_np) > 8000:  # 0.5 seconds at 16kHz
-                        # Transcribe
-                        result = self.audio_model.transcribe(audio_np, fp16=torch.cuda.is_available())
-                        text = result['text'].strip()
+                    if self.phrase_bytes:
+                        audio_np = np.frombuffer(self.phrase_bytes, dtype=np.int16).astype(np.float32) / 32768.0
                         
-                        # Update transcription
-                        if phrase_complete:
-                            self.transcription.append(text)
-                        else:
-                            self.transcription[-1] = text
-                        
-                        # Display transcription
-                        self._display_transcription()
+                        # Only transcribe if we have enough audio (at least 0.5 seconds)
+                        if len(audio_np) > 8000:  # 0.5 seconds at 16kHz
+                            # Transcribe
+                            result = self.audio_model.transcribe(audio_np, fp16=torch.cuda.is_available())
+                            text = result['text'].strip()
+                            
+                            # Only update display if text actually changed
+                            if text != self.last_transcription:
+                                self.transcription[-1] = text
+                                self.last_transcription = text
+                                self._display_transcription()
+                            
+                            # Check immediately after transcription if we should finalize
+                            if self.last_speech_time and not has_speech:
+                                silence_duration = (now - self.last_speech_time).total_seconds()
+                                if silence_duration >= self.phrase_timeout:
+                                    # Use the existing transcription without re-transcribing
+                                    text = self.transcription[-1]
+                                    
+                                    print(f"\n[Detected complete phrase after {silence_duration:.1f}s silence]")
+                                    self.transcription.append('')
+                                    
+                                    if text and self.on_phrase_complete:
+                                        self.on_phrase_complete(text)
+                                    
+                                    # Reset for next phrase
+                                    self.phrase_bytes = bytes()
+                                    self.last_speech_time = None
+                                    self.last_transcription = ''
                 else:
-                    sleep(0.25)
+                    # Queue is empty - check if we need to finalize
+                    if self.last_speech_time and self.phrase_bytes:
+                        silence_duration = (now - self.last_speech_time).total_seconds()
+                        if silence_duration >= self.phrase_timeout:
+                            # Use existing transcription
+                            text = self.transcription[-1]
+                            
+                            print(f"\n[Detected complete phrase after {silence_duration:.1f}s silence]")
+                            self.transcription.append('')
+                            
+                            if text and self.on_phrase_complete:
+                                self.on_phrase_complete(text)
+                            
+                            # Reset for next phrase
+                            self.phrase_bytes = bytes()
+                            self.last_speech_time = None
+                            self.last_transcription = ''
                     
+                    sleep(0.1)
+                        
             except Exception as e:
                 if self.is_running:
                     print(f"Error in transcription loop: {e}")
@@ -234,6 +303,27 @@ class SystemAudioWhisperClient:
             print(line)
         print('', end='', flush=True)
     
+    def pause(self):
+        """Pause transcription (stops capturing/processing audio)"""
+        self.is_paused = True
+        # Clear any accumulated audio data
+        while not self.data_queue.empty():
+            self.data_queue.get()
+        self.phrase_bytes = bytes()
+        self.last_speech_time = None
+        print("Transcription service is paused")
+    
+    def resume(self):
+        """Resume transcription"""
+        self.is_paused = False
+        self.last_transcription = ''
+        self.phrase_bytes = bytes()
+        self.last_speech_time = None
+        # Clear the queue
+        while not self.data_queue.empty():
+            self.data_queue.get()
+        print("Transcription service is resumed")
+    
     def start(self):
         """Start the transcription service."""
         if self.is_running:
@@ -246,11 +336,13 @@ class SystemAudioWhisperClient:
         self._initialize_audio()
         
         # Reset state
-        self.phrase_time = None
+        self.last_speech_time = None
         self.data_queue = Queue()
         self.phrase_bytes = bytes()
         self.transcription = ['']
+        self.last_transcription = ''
         self.is_running = True
+        self.is_paused = False
         
         # Start audio capture thread
         self.audio_capture_thread = threading.Thread(target=self._audio_capture_loop, daemon=True)
@@ -262,7 +354,7 @@ class SystemAudioWhisperClient:
         
         print("Transcription service started. Listening to system audio...")
     
-    def stop(self):
+    def stop(self, llm_response_array):
         """Stop the transcription service."""
         if not self.is_running:
             print("Transcription service is not running!")
@@ -285,10 +377,12 @@ class SystemAudioWhisperClient:
             self.pyaudio_instance.terminate()
         
         print("\nFinal Transcription:")
-        for line in self.transcription:
-            print(line)
+        llm_res_len = len(llm_response_array)
+        for line in range(len(self.transcription)):
+            print(f"[USER]\n{self.transcription[line]}")
+            if line < llm_res_len:
+                print(f"[LLM]\n{llm_response_array[line]}")
         
-        print("Transcription service stopped.")
     
     def get_transcription(self):
         """Get the current transcription as a list of strings."""
@@ -302,19 +396,3 @@ class SystemAudioWhisperClient:
         """Clear the current transcription."""
         self.transcription = ['']
         self._display_transcription()
-
-
-# Test the system audio transcription
-if __name__ == "__main__":
-    client = SystemAudioWhisperClient(model="base")  # Start with 'base' for faster testing
-    
-    try:
-        client.start()
-        
-        # Let it run until user stops it
-        while True:
-            sleep(1)
-            
-    except KeyboardInterrupt:
-        print("\n\nStopping...")
-        client.stop()
