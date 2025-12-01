@@ -26,9 +26,8 @@ class SystemAudioWhisperClient:
     client.stop() - stop transcribing
     """
     def __init__(self, model="medium", non_english=False, energy_threshold=1000,
-                 record_timeout=0.5, phrase_timeout=3, on_phrase_complete=None,
-                 silence_threshold=0.002):  # silence_threshold should be between 0.005 - 0.02)
-                                             # Ends to early = increase, vice versa
+                 record_timeout=0.5, phrase_timeout=5, on_phrase_complete=None,
+                 silence_threshold=0.002, max_phrase_duration=15):
         """
         Initialize the transcription service.
         
@@ -39,22 +38,25 @@ class SystemAudioWhisperClient:
             record_timeout: How real time the recording is in seconds
             phrase_timeout: Empty space between recordings before new line
             on_phrase_complete: Callback function(text) called when a phrase is complete
-            silence_threshold: Audio level below this is considered silence (0-1 range)
+            silence_threshold: Audio level below this is considered silence (0-1 range), increase if ends to early, vice versa
+            max_phrase_duration: Maximum duration in seconds before forcing phrase completion (default: 30)
         """
         self.model_name = model
         self.non_english = non_english
         self.energy_threshold = energy_threshold
         self.record_timeout = record_timeout
         self.phrase_timeout = phrase_timeout
+        self.max_phrase_duration = max_phrase_duration
         self.on_phrase_complete = on_phrase_complete
-        self.silence_threshold = silence_threshold  # NEW
+        self.silence_threshold = silence_threshold
         
         # State variables
-        self.last_speech_time = None  # NEW: track when we last heard speech
+        self.last_speech_time = None
+        self.phrase_start_time = None  # NEW: track when current phrase started
         self.data_queue = Queue()
         self.phrase_bytes = bytes()
         self.transcription = ['']
-        self.last_transcription = ''  # NEW: to prevent unnecessary display updates
+        self.last_transcription = ''
         self.is_running = False
         self.is_paused = False
         self.transcription_thread = None
@@ -232,6 +234,10 @@ class SystemAudioWhisperClient:
                         # Combine all audio data
                         audio_data = b''.join(chunks)
                         
+                        # Track when phrase started
+                        if not self.phrase_bytes:
+                            self.phrase_start_time = now
+                        
                         # Add to accumulated phrase data
                         self.phrase_bytes += audio_data
                     
@@ -251,6 +257,24 @@ class SystemAudioWhisperClient:
                                 self.last_transcription = text
                                 self._display_transcription()
                             
+                            # Check if phrase has exceeded maximum duration
+                            if self.phrase_start_time:
+                                phrase_duration = (now - self.phrase_start_time).total_seconds()
+                                if phrase_duration >= self.max_phrase_duration:
+                                    text = self.transcription[-1]
+                                    print(f"\n[Max duration {self.max_phrase_duration}s reached - sending phrase]")
+                                    self.transcription.append('')
+                                    
+                                    if text and self.on_phrase_complete:
+                                        self.on_phrase_complete(text)
+                                    
+                                    # Reset for next phrase
+                                    self.phrase_bytes = bytes()
+                                    self.last_speech_time = None
+                                    self.phrase_start_time = None
+                                    self.last_transcription = ''
+                                    continue  # Skip the silence check below
+                            
                             # Check immediately after transcription if we should finalize
                             if self.last_speech_time and not has_speech:
                                 silence_duration = (now - self.last_speech_time).total_seconds()
@@ -267,6 +291,7 @@ class SystemAudioWhisperClient:
                                     # Reset for next phrase
                                     self.phrase_bytes = bytes()
                                     self.last_speech_time = None
+                                    self.phrase_start_time = None
                                     self.last_transcription = ''
                 else:
                     # Queue is empty - check if we need to finalize
@@ -285,6 +310,7 @@ class SystemAudioWhisperClient:
                             # Reset for next phrase
                             self.phrase_bytes = bytes()
                             self.last_speech_time = None
+                            self.phrase_start_time = None
                             self.last_transcription = ''
                     
                     sleep(0.1)
@@ -311,6 +337,7 @@ class SystemAudioWhisperClient:
             self.data_queue.get()
         self.phrase_bytes = bytes()
         self.last_speech_time = None
+        self.phrase_start_time = None
         print("Transcription service is paused")
     
     def resume(self):
@@ -319,6 +346,7 @@ class SystemAudioWhisperClient:
         self.last_transcription = ''
         self.phrase_bytes = bytes()
         self.last_speech_time = None
+        self.phrase_start_time = None
         # Clear the queue
         while not self.data_queue.empty():
             self.data_queue.get()
@@ -337,6 +365,7 @@ class SystemAudioWhisperClient:
         
         # Reset state
         self.last_speech_time = None
+        self.phrase_start_time = None
         self.data_queue = Queue()
         self.phrase_bytes = bytes()
         self.transcription = ['']

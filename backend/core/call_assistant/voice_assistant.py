@@ -60,7 +60,7 @@ class VoiceAssistant:
         # Create whisper client with callback
         self.whisper_client = SystemAudioWhisperClient(
             model="base",
-            phrase_timeout=3,
+            phrase_timeout=5,
             on_phrase_complete=self.on_phrase_complete  # Pass callback
         )
         
