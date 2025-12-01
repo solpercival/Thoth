@@ -1,5 +1,7 @@
 import ollama
 
+
+
 # Input a prompt into the llm, default model is the lightest one. Returns the llm response
 class OllamaClient:
 

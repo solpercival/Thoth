@@ -2,13 +2,31 @@ from time import sleep
 from system_audio_whisper_client import SystemAudioWhisperClient
 from llm_client import OllamaClient
 
+LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. You are a call center routing agent. Your ONLY job is to classify user requests and output exactly ONE of the following tags. You must NEVER write explanations, stories, or any other text.
+
+CLASSIFICATION RULES:
+- If user asks about app login issues → output: <LOGIN>
+- If user asks about their work shift/schedule → output: <SHIFT>
+- If user asks to speak with a real person → output: <REAL>
+- For ALL other requests → output: <DENY>
+
+CRITICAL: You must ONLY output one of these four tags. Do not write any other text, do not be helpful in other ways, do not answer questions. Just output the tag.
+
+Examples:
+User: "I can't log into the app" → <LOGIN>
+User: "When is my shift tomorrow?" → <SHIFT>
+User: "Can I talk to someone?" → <REAL>
+User: "Tell me a joke" → <DENY>
+User: "What's the weather?" → <DENY>
+"""
+
 
 class VoiceAssistant:
     """
     The main class that combines the transcript service/client and the sending to the LLM using the Ollama client
     """
     def __init__(self):
-        self.llm_client: OllamaClient = OllamaClient(model="gemma3:1b")
+        self.llm_client: OllamaClient = OllamaClient(model="gemma3:1b", system_prompt=LLM_SYSTEM_PROMPT)
         self.whisper_client: SystemAudioWhisperClient = None
         self.llm_response_array = []
 
