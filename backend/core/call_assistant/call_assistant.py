@@ -1,4 +1,5 @@
 from time import sleep
+from threading import Event
 from system_audio_whisper_client import SystemAudioWhisperClient
 from llm_client import OllamaClient
 
@@ -21,7 +22,7 @@ User: "What's the weather?" → <DENY>
 """
 
 
-class VoiceAssistant:
+class CallAssistant:
     """
     The main class that combines the transcript service/client and the sending to the LLM using the Ollama client
     """
@@ -77,7 +78,46 @@ class VoiceAssistant:
             self.whisper_client.stop(self.llm_response_array)
 
 
+    def stop(self):
+        """Stop the voice assistant"""
+        self.is_running = False
+        if self.whisper_client:
+            self.whisper_client.stop(self.llm_response_array)
+
+
+    def run_with_event(self, stop_event: Event):
+        """
+        Start the voice assistant with external stop control.
+        Used for assistants running in the flask web apps.
+        NOTE: This is a non blocking approach to signal the assistant
+        to stop, this is needed because the stopping process itself
+        takes a while and HTTPS does not like that and will throw an error
+        """
+        self.whisper_client = SystemAudioWhisperClient(
+            model="base",
+            phrase_timeout=5,
+            on_phrase_complete=self.on_phrase_complete
+        )
+        
+        try:
+            self.whisper_client.start()
+            print("\nVoice Assistant running. Waiting for stop signal.\n")
+            
+            # Wait for stop event instead of infinite loop
+            while not stop_event.is_set():
+                sleep(0.5)
+            
+            print("\n\nStop signal received, shutting down...")
+            
+        except Exception as e:
+            print(f"\nError in voice assistant: {e}")
+        finally:
+            # Clean up
+            if self.whisper_client:
+                self.whisper_client.stop(self.llm_response_array)
+
+
 if __name__ == "__main__":
-    assistant = VoiceAssistant()
+    assistant = CallAssistant()
     assistant.run()       
 
