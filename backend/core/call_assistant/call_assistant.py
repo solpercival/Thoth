@@ -88,34 +88,56 @@ class CallAssistant:
     def run_with_event(self, stop_event: Event):
         """
         Start the voice assistant with external stop control.
-        Used for assistants running in the flask web apps.
-        NOTE: This is a non blocking approach to signal the assistant
-        to stop, this is needed because the stopping process itself
-        takes a while and HTTPS does not like that and will throw an error
         """
-        self.whisper_client = SystemAudioWhisperClient(
-            model="base",
-            phrase_timeout=5,
-            on_phrase_complete=self.on_phrase_complete
-        )
-        
         try:
+            self.whisper_client = SystemAudioWhisperClient(
+                model="base",
+                phrase_timeout=5,
+                on_phrase_complete=self.on_phrase_complete
+            )
+            
             self.whisper_client.start()
             print("\nVoice Assistant running. Waiting for stop signal.\n")
             
-            # Wait for stop event instead of infinite loop
             while not stop_event.is_set():
                 sleep(0.5)
             
             print("\n\nStop signal received, shutting down...")
             
+        except KeyboardInterrupt:
+            print("\n\nKeyboard interrupt received...")
         except Exception as e:
             print(f"\nError in voice assistant: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
-            # Clean up
+            print("Cleaning up audio resources...")
             if self.whisper_client:
-                self.whisper_client.stop(self.llm_response_array)
-
+                try:
+                    self.whisper_client.is_running = False
+                    sleep(0.5)
+                except Exception as e:
+                    print(f"Error stopping whisper client loops (non-fatal): {e}")
+                
+                try:
+                    self.whisper_client.stop(self.llm_response_array)
+                except Exception as e:
+                    print(f"Error during whisper client stop (non-fatal): {e}")
+                    # Try manual cleanup if stop() failed
+                    try:
+                        if self.whisper_client.stream:
+                            self.whisper_client.stream.stop_stream()
+                            self.whisper_client.stream.close()
+                    except Exception as stream_err:
+                        print(f"Error closing stream (non-fatal): {stream_err}")
+                    
+                    try:
+                        if self.whisper_client.pyaudio_instance:
+                            self.whisper_client.pyaudio_instance.terminate()
+                    except Exception as pyaudio_err:
+                        print(f"Error terminating pyaudio (non-fatal): {pyaudio_err}")
+            
+            print("Cleanup complete.")
 
 if __name__ == "__main__":
     assistant = CallAssistant()

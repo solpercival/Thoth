@@ -404,6 +404,7 @@ class SystemAudioWhisperClient:
             self.stream.close()
         if self.pyaudio_instance:
             self.pyaudio_instance.terminate()
+            
         
         print("\nFinal Transcription:")
         llm_res_len = len(llm_response_array)

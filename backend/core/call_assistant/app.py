@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from threading import Thread, Event
 from call_assistant import CallAssistant
 import time
+import os
 
 app = Flask(__name__)
 
@@ -11,8 +12,6 @@ active_sessions = {}
 
 @app.route('/webhook/call-started', methods=['POST'])
 def call_started():
-    """Webhook endpoint triggered when a call starts"""
-    
     data = request.json
     call_id = data.get('call_id')
     
@@ -22,25 +21,29 @@ def call_started():
     if call_id in active_sessions:
         return jsonify({'status': 'already running'}), 200
     
-    # Create assistant and stop event
     assistant = CallAssistant()
     stop_event = Event()
     
     def run_assistant():
         try:
-            assistant.run_with_event(stop_event)  # Pass stop event
+            assistant.run_with_event(stop_event)
         except Exception as e:
-            print(f"Assistant error for call {call_id}: {e}")
+            print(f"!!! Assistant error for call {call_id}: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
-            # Clean up when done
+            # Always clean up the session
+            print(f"Removing session for call {call_id}")
             if call_id in active_sessions:
                 del active_sessions[call_id]
+
+            os.system("cls")
+            print(f"Session removed. Active sessions: {len(active_sessions)}")
     
-    # Start assistant in background
-    thread = Thread(target=run_assistant, daemon=False)
+    # Use daemon=True to prevent blocking Flask shutdown
+    thread = Thread(target=run_assistant, daemon=True)
     thread.start()
     
-    # Store session
     active_sessions[call_id] = {
         'assistant': assistant,
         'thread': thread,
