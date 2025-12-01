@@ -3,7 +3,10 @@ Example configuration file for different websites
 Customize selectors based on actual website structure
 """
 
-from automation.login import WebsiteConfig, LoginStrategy
+try:
+    from .login import WebsiteConfig, LoginStrategy
+except ImportError:
+    from login import WebsiteConfig, LoginStrategy
 
 
 # GitHub Login Configuration
@@ -39,6 +42,17 @@ EXAMPLE_CONFIG = WebsiteConfig(
     wait_timeout=10,
 )
 
+# HAHS VIC3495 Login Configuration
+HAHS_VIC3495_CONFIG = WebsiteConfig(
+    url="https://hahs-vic3495.ezaango.app/login",
+    strategy=LoginStrategy.STANDARD,
+    username_selector="input[id='email']",      # <input id="email" type="email" name="email" ...>
+    password_selector="input[id='password']",   # <input id="password" type="password" name="password" ...>
+    submit_selector="button[type='submit']",    # <button class="btn btn-primary btn-block" type="submit">
+    expected_url_after_login="https://hahs-vic3495.ezaango.app/",
+    wait_timeout=15,
+)
+
 # Website with extra fields (security questions, 2FA code, etc.)
 EXAMPLE_WITH_EXTRAS = WebsiteConfig(
     url="https://example.com/login",
@@ -59,6 +73,7 @@ WEBSITE_CONFIGS = {
     "github": GITHUB_CONFIG,
     "linkedin": LINKEDIN_CONFIG,
     "example_service": EXAMPLE_CONFIG,
+    "hahs_vic3495": HAHS_VIC3495_CONFIG,
     "example_with_extras": EXAMPLE_WITH_EXTRAS,
 }
 
