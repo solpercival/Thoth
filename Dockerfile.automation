@@ -1,0 +1,41 @@
+# Dockerfile for Login Automation Service (integrated with LLM core pipeline)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies including Chrome and ChromeDriver
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chrome
+RUN apt-get update && apt-get install -y \
+    chromium-browser \
+    chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY backend/requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir \
+    selenium==4.15.2
+
+# Copy application
+COPY backend/automation/ /app/automation/
+
+# Create directory for screenshots
+RUN mkdir -p /app/screenshots
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV HEADLESS=true
+
+# Receives credentials from LLM core via environment or network
+# Run interactively or as part of LLM pipeline
+ENTRYPOINT ["python"]
+CMD ["-m", "automation.example_usage"]

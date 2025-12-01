@@ -1,0 +1,29 @@
+# Docker Compose configuration for Login Automation integrated with LLM core pipeline
+# The credentials API is replaced by direct LLM reasoning output
+
+version: '3.8'
+
+services:
+  # Login Automation Service (integrated with LLM core)
+  login-automation:
+    build:
+      context: .
+      dockerfile: Dockerfile.automation
+    container_name: login-automation
+    environment:
+      - HEADLESS=true
+      - PYTHONUNBUFFERED=1
+    networks:
+      - automation-network
+    volumes:
+      - ./automation:/app/automation:ro
+      - ./screenshots:/app/screenshots:rw
+    # Receives login requests from LLM core via shared volume or network
+    depends_on:
+      - llm-core  # Uncomment if LLM core is in same compose
+    # command: python -m automation.example_usage
+
+networks:
+  automation-network:
+    driver: bridge
+
