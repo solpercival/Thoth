@@ -25,6 +25,8 @@ numba==0.62.1
 numpy==2.3.5
 ollama==0.6.1
 openai-whisper @ git+https://github.com/openai/whisper.git@c0d2f624c09dc18e709e37c2ad90c039a4eb72a2
+playwright==1.50.0
+beautifulsoup4==4.13.0
 PyAudio==0.2.14
 PyAudioWPatch==0.2.12.7
 pycparser==2.23

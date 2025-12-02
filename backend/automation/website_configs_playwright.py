@@ -1,12 +1,12 @@
 """
-Example configuration file for different websites
-Customize selectors based on actual website structure
+Website configurations for Playwright-based login automation
+Customized for different websites with selectors and 2FA support
 """
 
 try:
-    from .login import WebsiteConfig, LoginStrategy
+    from .login_playwright import WebsiteConfig, LoginStrategy
 except ImportError:
-    from login import WebsiteConfig, LoginStrategy
+    from login_playwright import WebsiteConfig, LoginStrategy
 
 
 # GitHub Login Configuration
@@ -45,15 +45,16 @@ EXAMPLE_CONFIG = WebsiteConfig(
 # HAHS VIC3495 Login Configuration
 HAHS_VIC3495_CONFIG = WebsiteConfig(
     url="https://hahs-vic3495.ezaango.app/login",
-    strategy=LoginStrategy.STANDARD,
-    username_selector="input[id='email']",      # <input id="email" type="email" name="email" ...>
-    password_selector="input[id='password']",   # <input id="password" type="password" name="password" ...>
-    submit_selector="button[type='submit']",    # <button class="btn btn-primary btn-block" type="submit">
+    strategy=LoginStrategy.TWO_FACTOR,  # This site uses 2FA
+    username_selector="input[id='email'][type='email']",      # Visible email field (not the hidden one)
+    password_selector="input[id='password'][type='password']",   # Password field
+    submit_selector="button[type='submit']",    # Submit button
     expected_url_after_login="https://hahs-vic3495.ezaango.app/",
     wait_timeout=15,
+    two_fa_selector="input[id='one_time_password']",  # 2FA code field
 )
 
-# Website with extra fields (security questions, 2FA code, etc.)
+# Website with extra fields (security questions, etc.)
 EXAMPLE_WITH_EXTRAS = WebsiteConfig(
     url="https://example.com/login",
     strategy=LoginStrategy.STANDARD,
@@ -64,8 +65,19 @@ EXAMPLE_WITH_EXTRAS = WebsiteConfig(
     wait_timeout=10,
     extra_selectors={
         "security_answer": "input[name='security_answer']",
-        "2fa_code": "input[name='otp']",
     }
+)
+
+# Website with Two-Factor Authentication (2FA)
+EXAMPLE_WITH_2FA = WebsiteConfig(
+    url="https://example.com/login",
+    strategy=LoginStrategy.TWO_FACTOR,
+    username_selector="input[name='username']",
+    password_selector="input[name='password']",
+    submit_selector="button[type='submit']",
+    expected_url_after_login="https://example.com/dashboard",
+    wait_timeout=10,
+    two_fa_selector="input[name='otp'], input[placeholder='Enter 2FA code']",
 )
 
 # Mapping of service names to their configurations
@@ -75,6 +87,7 @@ WEBSITE_CONFIGS = {
     "example_service": EXAMPLE_CONFIG,
     "hahs_vic3495": HAHS_VIC3495_CONFIG,
     "example_with_extras": EXAMPLE_WITH_EXTRAS,
+    "example_with_2fa": EXAMPLE_WITH_2FA,
 }
 
 
