@@ -194,14 +194,7 @@ class PlaywrightAutoLogin:
         self, config: WebsiteConfig, credentials: Credentials, service_name: str
     ) -> bool:
         """
-        Standard username/password login with optional 2FA.
-        
-        Multi-step flow:
-        1. Fill username and password.
-        2. Click the first form's submit button (specifically for the login form, not 2FA).
-        3. Wait for 2FA modal/window to appear (if 2FA is enabled).
-        4. Fill 2FA code and submit.
-        5. Verify login success.
+        Standard username/password login with optional 2FA
         
         Args:
             config: Website configuration
@@ -223,114 +216,109 @@ class PlaywrightAutoLogin:
             await self.page.goto(config.url, wait_until="networkidle")
             logger.info(f"Navigated to login page: {self.page.url}")
 
-            # Step 1: Fill username field
-            logger.info(f"Step 1: Looking for username field: {config.username_selector}")
+            # Fill username field
+            logger.info(f"Looking for username field: {config.username_selector}")
             username_locator = await self._find_element(
                 config.username_selector, timeout=config.wait_timeout
             )
             await username_locator.fill(credentials.username)
             logger.info("Username entered")
 
-            # Step 2: Fill password field
-            logger.info(f"Step 2: Looking for password field: {config.password_selector}")
+            # Fill password field
+            logger.info(f"Looking for password field: {config.password_selector}")
             password_locator = await self._find_element(
                 config.password_selector, timeout=config.wait_timeout
             )
             await password_locator.fill(credentials.password)
             logger.info("Password entered")
 
-            # Step 3: Handle extra fields if present (security questions, etc.)
+            # Handle extra fields if present (security questions, etc.)
             if config.extra_selectors and credentials.extra_fields:
                 for field_name, selector in config.extra_selectors.items():
                     if field_name in credentials.extra_fields:
                         try:
                             extra_locator = await self._find_element(selector)
                             await extra_locator.fill(credentials.extra_fields[field_name])
-                            logger.info(f"Extra field '{field_name}' filled")
+                            logger.debug(f"Extra field '{field_name}' filled")
                         except Exception as e:
                             logger.warning(f"Failed to fill extra field '{field_name}': {e}")
 
-            # Step 4: Click the login form's submit button (the "Log In" button, not 2FA)
-            logger.info(f"Step 4: Looking for login form submit button: {config.submit_selector}")
-            # Use first() to get the first match (avoid strict mode violation with multiple submit buttons)
-            submit_locator = self.page.locator(config.submit_selector).first
-            await submit_locator.wait_for(timeout=config.wait_timeout * 1000)
+            # Submit form
+            logger.info(f"Looking for submit button: {config.submit_selector}")
+            submit_locator = await self._find_element(
+                config.submit_selector, timeout=config.wait_timeout
+            )
             await submit_locator.click()
-            logger.info("Login form submitted, waiting for page transition...")
+            logger.info("Form submitted, waiting for page to load...")
 
-            # Step 5: Wait for navigation to complete (may be 2FA screen or dashboard)
+            # Wait for navigation or network idle
             await self.page.wait_for_load_state("networkidle")
-            logger.info(f"Page loaded after form submission. Current URL: {self.page.url}")
+            logger.info(f"Page loaded after submit. Current URL: {self.page.url}")
 
-            # Step 6: Handle 2FA if expected
+            # Handle 2FA if expected
             if config.strategy == LoginStrategy.TWO_FACTOR or config.two_fa_selector:
-                logger.info("Step 6: 2FA strategy detected, waiting for 2FA modal/window to appear...")
+                logger.info("2FA detected, waiting for 2FA code input")
                 
-                # Wait for the 2FA input field to appear (this signals the 2FA modal is visible)
-                try:
-                    two_fa_selector = config.two_fa_selector or "input[id='one_time_password']"
-                    logger.info(f"Waiting for 2FA field to appear: {two_fa_selector}")
-                    
-                    # Wait up to 30 seconds for the 2FA input to become visible
-                    await self.page.wait_for_selector(two_fa_selector, timeout=30000, state="visible")
-                    logger.info("2FA input field appeared!")
-                    
-                    if credentials.two_fa_code:
-                        # Fill the 2FA code
-                        two_fa_locator = self.page.locator(two_fa_selector).first
+                if credentials.two_fa_code:
+                    # If 2FA code was provided, enter it
+                    try:
+                        two_fa_selector = config.two_fa_selector or "input[name='otp']"
+                        logger.info(f"Looking for 2FA field: {two_fa_selector}")
+                        two_fa_locator = await self._find_element(
+                            two_fa_selector,
+                            timeout=30,
+                        )
                         await two_fa_locator.fill(credentials.two_fa_code)
                         logger.info("2FA code entered")
                         
-                        # Find and click the 2FA submit button (use id selector for precision)
+                        # Find and click 2FA submit button
                         logger.info("Looking for 2FA submit button...")
-                        two_fa_submit = self.page.locator("#check_otp").first
-                        await two_fa_submit.wait_for(timeout=10000)
-                        await two_fa_submit.click()
+                        two_fa_submit = self.page.locator(
+                            "button[type='submit'], button:has-text('Verify'), button:has-text('Confirm')"
+                        )
+                        await two_fa_submit.first.click()
                         logger.info("2FA form submitted")
                         
-                        # Wait for post-2FA navigation
                         await self.page.wait_for_load_state("networkidle")
                         logger.info(f"Page loaded after 2FA. Current URL: {self.page.url}")
-                    else:
-                        logger.info("2FA field visible but no code provided. Waiting for manual intervention (60 seconds)...")
-                        await asyncio.sleep(60)
-                        
-                except Exception as e:
-                    logger.warning(f"2FA modal did not appear or error occurred: {e}")
-                    logger.info("Assuming manual 2FA intervention is required, waiting 60 seconds...")
-                    await asyncio.sleep(60)  # Give user 60 seconds to manually enter 2FA
-            else:
-                logger.info("No 2FA strategy configured")
+                    except Exception as e:
+                        logger.warning(f"Failed to handle 2FA automatically: {e}")
+                        logger.info("Manual 2FA intervention may be required, waiting 60 seconds...")
+                        await asyncio.sleep(60)  # Give user 60 seconds
+                else:
+                    logger.info("2FA code not provided. Waiting for manual intervention (60 seconds)...")
+                    await asyncio.sleep(60)  # Wait for manual 2FA entry
 
-            # Step 7: Verify login success
-            logger.info("Step 7: Verifying login success...")
+            # Verify login if expected URL provided
             if config.expected_url_after_login:
                 current_url = self.page.url
                 if config.expected_url_after_login in current_url:
-                    logger.info(f"✓ Login successful! Current URL: {current_url}")
+                    logger.info(f"Login successful. Current URL: {current_url}")
                     await self._save_session(service_name)
                     return True
                 else:
                     logger.warning(
-                        f"✗ Expected URL '{config.expected_url_after_login}' not found. Current URL: {current_url}"
+                        f"Expected URL '{config.expected_url_after_login}' "
+                        f"not found. Current URL: {current_url}"
                     )
+                    # Take screenshot for debugging
                     await self.take_screenshot(f"login_failed_{service_name}.png")
                     logger.info(f"Debug screenshot saved: login_failed_{service_name}.png")
                     return False
             else:
                 current_url = self.page.url
-                logger.info(f"✓ Login form completed. Current URL: {current_url}")
+                logger.info(f"Login form submitted. Current URL: {current_url}")
                 await self._save_session(service_name)
                 return True
 
         except asyncio.TimeoutError as e:
-            logger.error(f"✗ Timeout during login to {config.url}: {e}")
+            logger.error(f"Timeout during login to {config.url}: {e}")
             if self.page:
                 await self.take_screenshot(f"timeout_{service_name}.png")
                 logger.info(f"Debug screenshot saved: timeout_{service_name}.png")
             return False
         except Exception as e:
-            logger.error(f"✗ Login failed with error: {e}", exc_info=True)
+            logger.error(f"Login failed with error: {e}", exc_info=True)
             if self.page:
                 await self.take_screenshot(f"error_{service_name}.png")
                 logger.info(f"Debug screenshot saved: error_{service_name}.png")
