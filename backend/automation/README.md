@@ -12,7 +12,7 @@ This module provides automated website login functionality as part of the Thoth 
                  │
 ┌────────────────▼────────────────┐
 │ LLM Core Reasoning              │
-│ (Extract credentials, actions)  │
+│ (Choose appropriate actions)    │
 └────────────────┬────────────────┘
                  │ llm_reasoning_output
                  │ {
@@ -23,7 +23,10 @@ This module provides automated website login functionality as part of the Thoth 
                  │
 ┌────────────────▼────────────────┐
 │ Login Automation (This Module)  │
-│ (Selenium-based login)          │
+│ Playwright-based login          │
+| Playwright saves cookies and    |
+| the signed in state so that 2FA |
+| is not needed                   |
 └────────────────┬────────────────┘
                  │ scraped_content
                  │
@@ -63,7 +66,7 @@ Core automation library with:
 - **Credentials**: Dataclass with `from_llm_output()` method for LLM integration
 
 ### 2. Website Configurations (`automation/website_configs.py`)
-Pre-configured settings for popular websites and templates for custom sites.
+Pre-configured for custom sites.
 
 ### 3. Integration Example (`automation/example_usage.py`)
 - `login_from_llm_reasoning()`: Direct LLM credential integration
