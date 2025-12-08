@@ -1,32 +1,19 @@
 """
-Interactive runner to perform first-time admin login using Playwright when
-you only have username, password and an authenticator app on your phone.
-
-Behavior:
-- If a saved session exists, loads it and skips login/2FA entirely.
-- Otherwise, attempts to fetch admin credentials from `credentials_api`.
-- Opens a visible Playwright browser (headless=False).
-- Prompts you on the terminal to read the current code from your authenticator app and paste it.
-- Supplies the code to the Playwright login flow so the session is saved to `.sessions/{service_name}_admin_auth.json`.
+Interactive runner to perform admin login using Playwright.
+Always performs fresh login (no session caching).
 
 Usage (PowerShell from `backend/automation`):
     python .\run_admin_login_prompt_2fa.py hahs_vic3495
-
-If `CREDENTIALS_API_URL` is not running or you prefer to type credentials manually, the script will prompt for username/password.
 """
-import os
 import asyncio
-import getpass
 import logging
-from pathlib import Path
-from typing import Optional
 
 try:
-    from .credentials_client import get_admin_credentials
+    from .secrets import get_admin_credentials, get_admin_totp_code
     from .login_playwright import LoginAutomation
     from .website_configs_playwright import get_config
-except Exception:
-    from credentials_client import get_admin_credentials
+except (ImportError, ValueError):
+    from secrets import get_admin_credentials, get_admin_totp_code
     from login_playwright import LoginAutomation
     from website_configs_playwright import get_config
 
@@ -35,30 +22,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 
 async def run_prompt_login(service_name: str):
-    session_file = Path(".sessions") / f"{service_name}_admin_auth.json"
-    
-    # If session already exists, load it and skip 2FA
-    if session_file.exists():
-        print(f"✓ Found existing session at {session_file}")
-        print("Loading saved session (no 2FA needed)...")
-        
-        try:
-            config = get_config(service_name)
-        except Exception as e:
-            print(f"Failed to get website config for '{service_name}': {e}")
-            return
-        
-        # Load saved session without needing credentials or 2FA
-        async with LoginAutomation(headless=False, max_retries=1, session_dir=".sessions") as automation:
-            # Use auto_login (PlaywrightAutoLogin) to initialize context with saved session
-            await automation.auto_login._initialize_context(f"{service_name}_admin")
-            if automation.auto_login.page:
-                await automation.auto_login.page.goto(config.url, wait_until="networkidle")
-                print(f"✓ Successfully loaded session! Authenticated as: {automation.auto_login.page.url}")
-            return
-    
-    # Session doesn't exist; perform fresh login
-    print(f"No saved session found. Attempting fresh login for '{service_name}'...")
+    """Perform fresh login with automatic TOTP code generation."""
+    print(f"Attempting login for '{service_name}'...")
     
     # Try to fetch admin credentials from credentials API
     creds = get_admin_credentials(service_name)
@@ -71,14 +36,21 @@ async def run_prompt_login(service_name: str):
     else:
         print(f"✓ Fetched credentials from API for '{service_name}'")
 
-    # Prompt user for TOTP code
+    # Generate TOTP code automatically from secret
     print("")
-    print("Open your authenticator app on your phone and get the current 6-digit code.")
-    two_fa = input("Enter the 2FA code: ").strip()
+    two_fa_code = get_admin_totp_code(service_name)
+    if not two_fa_code:
+        print("⚠ Warning: Could not generate TOTP code from secrets.")
+        print("Open your authenticator app on your phone and get the current 6-digit code.")
+        two_fa = input("Enter the 2FA code (or press Enter to skip): ").strip()
+        two_fa_code = two_fa if two_fa else None
+    else:
+        print(f"✓ Generated TOTP code automatically: {two_fa_code}")
 
     # Add two_fa_code into credentials dict expected by login_playwright
     creds_with_2fa = dict(creds)
-    creds_with_2fa["two_fa_code"] = two_fa
+    if two_fa_code:
+        creds_with_2fa["two_fa_code"] = two_fa_code
 
     # Load website config
     try:
@@ -87,14 +59,15 @@ async def run_prompt_login(service_name: str):
         print(f"Failed to get website config for '{service_name}': {e}")
         return
 
-    # Run Playwright login in visible mode to capture any UI differences
+    # Run Playwright login in visible mode
     async with LoginAutomation(headless=False, max_retries=1, session_dir=".sessions") as automation:
-        print("Opening browser and attempting login. Watch the browser and enter the code if needed.")
+        print("Opening browser and attempting login...")
         success = await automation.login_with_retry(config=config, service_name=f"{service_name}_admin", llm_credentials=creds_with_2fa)
         if success:
-            print("✓ Login successful — session saved to .sessions/")
-            print(f"  Session file: {session_file}")
-            print(f"  Next time, run this script without credentials — it will reuse the saved session.")
+            print("✓ Login successful!")
+            print("\nBrowser window is open. Check if you're logged in properly.")
+            print("Press Enter to close the browser...")
+            input()
         else:
             print("✗ Login failed. Check the browser for errors and try again.")
 

@@ -15,6 +15,11 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, BrowserContext, Page, expect
 
+try:
+    from .secrets import get_admin_totp_code
+except ImportError:
+    from secrets import get_admin_totp_code
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -264,35 +269,60 @@ class PlaywrightAutoLogin:
 
             # Step 6: Handle 2FA if expected
             if config.strategy == LoginStrategy.TWO_FACTOR or config.two_fa_selector:
-                logger.info("Step 6: 2FA strategy detected, waiting for 2FA modal/window to appear...")
+                logger.info("Step 6: 2FA strategy detected, checking for 2FA modal/field...")
                 
-                # Wait for the 2FA input field to appear (this signals the 2FA modal is visible)
+                # Wait for the 2FA input field to exist in DOM (may not be visible yet)
                 try:
                     two_fa_selector = config.two_fa_selector or "input[id='one_time_password']"
-                    logger.info(f"Waiting for 2FA field to appear: {two_fa_selector}")
+                    logger.info(f"Waiting for 2FA field: {two_fa_selector}")
                     
-                    # Wait up to 30 seconds for the 2FA input to become visible
-                    await self.page.wait_for_selector(two_fa_selector, timeout=30000, state="visible")
-                    logger.info("2FA input field appeared!")
+                    # Wait up to 30 seconds for the 2FA input to exist in DOM (don't require visibility yet)
+                    await self.page.wait_for_selector(two_fa_selector, timeout=30000)
+                    logger.info("2FA input field found in DOM!")
                     
-                    if credentials.two_fa_code:
-                        # Fill the 2FA code
+                    # Try to scroll it into view if it's hidden
+                    try:
                         two_fa_locator = self.page.locator(two_fa_selector).first
-                        await two_fa_locator.fill(credentials.two_fa_code)
-                        logger.info("2FA code entered")
+                        await two_fa_locator.scroll_into_view_if_needed()
+                    except:
+                        pass  # Element might not support scrolling, continue anyway
+                    
+                    # Try to get 2FA code from credentials, or generate from TOTP secret
+                    two_fa_code = credentials.two_fa_code
+                    
+                    if not two_fa_code:
+                        # Try to generate TOTP code from stored secret
+                        try:
+                            logger.info(f"Generating TOTP code for {service_name}...")
+                            two_fa_code = get_admin_totp_code(service_name)
+                            logger.info("✓ TOTP code generated successfully")
+                        except ValueError as e:
+                            logger.warning(f"TOTP auto-generation failed: {e}")
+                    
+                    if two_fa_code:
+                        # Fill the 2FA code (even if hidden, we can still fill it)
+                        try:
+                            two_fa_locator = self.page.locator(two_fa_selector).first
+                            await two_fa_locator.fill(two_fa_code)
+                            logger.info("2FA code entered")
+                        except Exception as e:
+                            logger.warning(f"Failed to fill 2FA code: {e}")
                         
                         # Find and click the 2FA submit button (use id selector for precision)
                         logger.info("Looking for 2FA submit button...")
-                        two_fa_submit = self.page.locator("#check_otp").first
-                        await two_fa_submit.wait_for(timeout=10000)
-                        await two_fa_submit.click()
-                        logger.info("2FA form submitted")
+                        try:
+                            two_fa_submit = self.page.locator("#check_otp").first
+                            await two_fa_submit.wait_for(timeout=10000)
+                            await two_fa_submit.click()
+                            logger.info("2FA form submitted")
+                        except Exception as e:
+                            logger.warning(f"Failed to click 2FA submit button: {e}")
                         
                         # Wait for post-2FA navigation
                         await self.page.wait_for_load_state("networkidle")
                         logger.info(f"Page loaded after 2FA. Current URL: {self.page.url}")
                     else:
-                        logger.info("2FA field visible but no code provided. Waiting for manual intervention (60 seconds)...")
+                        logger.info("2FA field found but no code available. Waiting for manual intervention (60 seconds)...")
                         await asyncio.sleep(60)
                         
                 except Exception as e:
@@ -306,13 +336,18 @@ class PlaywrightAutoLogin:
             logger.info("Step 7: Verifying login success...")
             if config.expected_url_after_login:
                 current_url = self.page.url
-                if config.expected_url_after_login in current_url:
+                # Check if the expected URL is the actual page (not just a substring)
+                # This prevents false positives where /login contains /
+                expected_path = config.expected_url_after_login.rstrip("/")
+                current_path = current_url.rstrip("/")
+                
+                if expected_path == current_path or current_path.startswith(expected_path + "/"):
                     logger.info(f"✓ Login successful! Current URL: {current_url}")
                     await self._save_session(service_name)
                     return True
                 else:
                     logger.warning(
-                        f"✗ Expected URL '{config.expected_url_after_login}' not found. Current URL: {current_url}"
+                        f"✗ Expected URL '{config.expected_url_after_login}' but got '{current_url}'"
                     )
                     await self.take_screenshot(f"login_failed_{service_name}.png")
                     logger.info(f"Debug screenshot saved: login_failed_{service_name}.png")

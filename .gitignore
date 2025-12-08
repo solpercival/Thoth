@@ -3,3 +3,4 @@ __pycache__
 .png
 .sessions/
 .sessions/*.json
+.env

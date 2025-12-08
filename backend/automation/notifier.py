@@ -1,21 +1,27 @@
 """
 Notifier utilities for automation.
 Provides a simple `notify_coordinator` function which currently logs the message
-and — if SMTP env variables are configured — sends an email.
+and — if SMTP is configured in .env — sends an email.
 """
-import os
 import logging
 from typing import List, Optional
 import smtplib
 from email.message import EmailMessage
 
+try:
+    from .secrets import get_smtp_config
+except ImportError:
+    from secrets import get_smtp_config
+
 logger = logging.getLogger(__name__)
 
-SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587")) if os.getenv("SMTP_PORT") else None
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
-FROM_ADDRESS = os.getenv("NOTIFIER_FROM", "no-reply@example.com")
+# Load SMTP config from .env
+_smtp_config = get_smtp_config()
+SMTP_HOST = _smtp_config.get('host')
+SMTP_PORT = _smtp_config.get('port')
+SMTP_USER = _smtp_config.get('user')
+SMTP_PASS = _smtp_config.get('password')
+FROM_ADDRESS = _smtp_config.get('from_address', 'no-reply@example.com')
 
 
 def _format_shifts_summary(shifts: List[dict]) -> str:
