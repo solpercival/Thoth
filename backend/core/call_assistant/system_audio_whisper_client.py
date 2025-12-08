@@ -413,7 +413,6 @@ class SystemAudioWhisperClient:
             if line < llm_res_len:
                 print(f"[LLM]\n{llm_response_array[line]}")
         
-    
     def get_transcription(self):
         """Get the current transcription as a list of strings."""
         return self.transcription.copy()
