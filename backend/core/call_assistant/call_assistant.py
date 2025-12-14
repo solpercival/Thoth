@@ -4,6 +4,9 @@ from system_audio_whisper_client import SystemAudioWhisperClient
 from llm_client import OllamaClient
 from typing import Optional
 
+# Own dependencies
+from agents.agent_chooser import *
+
 LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. You are a call center routing agent. Your ONLY job is to classify user requests and output exactly ONE of the following tags. You must NEVER write explanations, stories, or any other text.
 
 CLASSIFICATION RULES:
@@ -20,6 +23,9 @@ User: "When is my shift tomorrow?" → <SHIFT>
 User: "Can I talk to someone?" → <REAL>
 User: "Tell me a joke" → <DENY>
 User: "What's the weather?" → <DENY>
+"""
+
+AGENT_SYSTEM_PROMPT = """
 """
 
 
@@ -59,7 +65,22 @@ class CallAssistant:
         except Exception as e:
             print(f"[ERROR]\nLLM failed: {e}")
 
-        # Resume the whisper client again once we the response was recieved
+
+        # Depending on the LLM's answer, do actions
+        # print([ACTIVATING AGENTS])
+        agent: Agent = choose_agent(llm_response)
+        agent_response: str = agent.activate()
+        # print(f"[AGENT RESPONSE]\n{agent_response}")
+
+        # Send the results to the llm
+        # print([SENDING AGENT DATA TO LLM])
+        # llm_response = self.llm_client.ask_llm(agent_response)
+
+        # Convert it to TTS and pipe it through 3CX
+        # print([PLAYING LLM RESPONSE])
+        # tts_play(llm_response)
+
+        # Resume the whisper client again
         self.whisper_client.resume()
 
 
