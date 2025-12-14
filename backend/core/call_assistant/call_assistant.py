@@ -4,9 +4,11 @@ from system_audio_whisper_client import SystemAudioWhisperClient
 from llm_client import OllamaClient
 from typing import Optional
 
-# Own dependencies
-from agents.agent_chooser import *
 
+from agents.agent import Agent
+from agents.agent_chooser import choose_agent
+from tts_client import TTSClient
+# Own dependencies
 LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. You are a call center routing agent. Your ONLY job is to classify user requests and output exactly ONE of the following tags. You must NEVER write explanations, stories, or any other text.
 
 CLASSIFICATION RULES:
@@ -54,6 +56,7 @@ class CallAssistant:
 
         # Pause the whisper client, send phrase to LLM, and print response
         print("[SENDING TO LLM]")
+        route_response = ""
         self.whisper_client.pause()
         try:
             llm_response = self.llm_client.ask_llm(phrase)
@@ -61,24 +64,22 @@ class CallAssistant:
             self.llm_response_array.append(llm_response)
             
             # Route to appropriate action based on intent
-            self._route_intent(llm_response)
+            route_response = self._route_intent(llm_response)
         except Exception as e:
             print(f"[ERROR]\nLLM failed: {e}")
 
 
-        # Depending on the LLM's answer, do actions
-        # print([ACTIVATING AGENTS])
-        agent: Agent = choose_agent(llm_response)
-        agent_response: str = agent.activate()
-        # print(f"[AGENT RESPONSE]\n{agent_response}")
-
         # Send the results to the llm
         # print([SENDING AGENT DATA TO LLM])
-        # llm_response = self.llm_client.ask_llm(agent_response)
+        # llm_response = self.llm_client.ask_llm(route_response)
 
         # Convert it to TTS and pipe it through 3CX
         # print([PLAYING LLM RESPONSE])
         # tts_play(llm_response)
+
+        print(route_response)
+        tts_client: TTSClient = TTSClient()
+        tts_client.text_to_speech(route_response)
 
         # Resume the whisper client again
         self.whisper_client.resume()
@@ -106,23 +107,30 @@ class CallAssistant:
             self.whisper_client.stop(self.llm_response_array)
 
 
-    def _route_intent(self, intent_tag: str) -> None:
+    def _route_intent(self, intent_tag: str) -> str:
         """
         Route the LLM intent to the appropriate handler.
         
         Args:
             intent_tag: One of <LOGIN>, <SHIFT>, <REAL>, <DENY>
+        Return:
+            script to be passed into tts
         """
         if "<SHIFT>" in intent_tag and self.caller_phone:
             print(f"[ROUTING] Shift check request for {self.caller_phone}")
             # Would trigger shift checking here (async integration)
             # await check_shifts_for_caller(service_name="hahs_vic3495", caller_phone=self.caller_phone)
+            # For now
+            return "Your shift has been cancelled" 
+        
         elif "<LOGIN>" in intent_tag:
             print(f"[ROUTING] Login assistance requested")
             # Would trigger login flow here
+            return "Please hold, You will be redirected for live assistance"
         elif "<REAL>" in intent_tag:
             print(f"[ROUTING] Transfer to real agent")
             # Would trigger agent transfer here
+            return "Please hold, You will be redirected for live assistance"
         else:
             print(f"[ROUTING] Request denied: {intent_tag}")
 
@@ -135,7 +143,7 @@ class CallAssistant:
 
     def run_with_event(self, stop_event: Event):
         """
-        Start the voice assistant with external stop control.
+        Start the voice assistant with external stop control. Used in app.py.
         """
         try:
             self.whisper_client = SystemAudioWhisperClient(
