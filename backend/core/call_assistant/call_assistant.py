@@ -2,6 +2,7 @@ from time import sleep
 from threading import Event
 from system_audio_whisper_client import SystemAudioWhisperClient
 from llm_client import OllamaClient
+from typing import Optional
 
 LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. You are a call center routing agent. Your ONLY job is to classify user requests and output exactly ONE of the following tags. You must NEVER write explanations, stories, or any other text.
 
@@ -26,7 +27,8 @@ class CallAssistant:
     """
     The main class that combines the transcript service/client and the sending to the LLM using the Ollama client
     """
-    def __init__(self):
+    def __init__(self, caller_phone: Optional[str] = None):
+        self.caller_phone = caller_phone  # Store caller phone number for context
         self.llm_client: OllamaClient = OllamaClient(model="gemma3:1b", system_prompt=LLM_SYSTEM_PROMPT)
         self.whisper_client: SystemAudioWhisperClient = None
         self.llm_response_array = []
@@ -41,6 +43,8 @@ class CallAssistant:
         """
 
         print(f"[PHRASE COMPLETE]\n{phrase}")
+        if self.caller_phone:
+            print(f"[CALLER PHONE] {self.caller_phone}")
 
         # Pause the whisper client, send phrase to LLM, and print response
         print("[SENDING TO LLM]")
@@ -49,6 +53,9 @@ class CallAssistant:
             llm_response = self.llm_client.ask_llm(phrase)
             print(f"[LLM RESPONSE]\n{llm_response}")
             self.llm_response_array.append(llm_response)
+            
+            # Route to appropriate action based on intent
+            self._route_intent(llm_response)
         except Exception as e:
             print(f"[ERROR]\nLLM failed: {e}")
 
@@ -77,6 +84,26 @@ class CallAssistant:
             print("\n\nStopping Voice Assistant...")
             self.whisper_client.stop(self.llm_response_array)
 
+
+    def _route_intent(self, intent_tag: str) -> None:
+        """
+        Route the LLM intent to the appropriate handler.
+        
+        Args:
+            intent_tag: One of <LOGIN>, <SHIFT>, <REAL>, <DENY>
+        """
+        if "<SHIFT>" in intent_tag and self.caller_phone:
+            print(f"[ROUTING] Shift check request for {self.caller_phone}")
+            # Would trigger shift checking here (async integration)
+            # await check_shifts_for_caller(service_name="hahs_vic3495", caller_phone=self.caller_phone)
+        elif "<LOGIN>" in intent_tag:
+            print(f"[ROUTING] Login assistance requested")
+            # Would trigger login flow here
+        elif "<REAL>" in intent_tag:
+            print(f"[ROUTING] Transfer to real agent")
+            # Would trigger agent transfer here
+        else:
+            print(f"[ROUTING] Request denied: {intent_tag}")
 
     def stop(self):
         """Stop the voice assistant"""

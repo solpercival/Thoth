@@ -536,6 +536,39 @@ class LoginAutomation:
             logger.error(f"Failed to scrape page: {e}")
             return ""
 
+    async def navigate_and_scrape(self, url: str) -> str:
+        """
+        Navigate to a specific URL and scrape page content
+        
+        Args:
+            url: URL to navigate to
+            
+        Returns:
+            Page content/HTML
+        """
+        try:
+            if not self.auto_login.page:
+                logger.error("No active page - login may have failed")
+                return ""
+            
+            await self.auto_login.page.goto(url, wait_until="networkidle")
+            content = await self.auto_login.get_page_source()
+            self.last_scraped_content = content
+            logger.info(f"Navigated to {url} and scraped successfully")
+            return content
+        except Exception as e:
+            logger.error(f"Failed to navigate and scrape {url}: {e}")
+            return ""
+
+    async def get_page(self):
+        """
+        Get the underlying Playwright page object (for advanced operations like staff lookup)
+        
+        Returns:
+            Playwright Page object or None
+        """
+        return self.auto_login.page if hasattr(self.auto_login, 'page') else None
+
     async def take_screenshot(self, filename: str):
         """Take a screenshot for debugging"""
         await self.auto_login.take_screenshot(filename)

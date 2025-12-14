@@ -14,6 +14,7 @@ active_sessions = {}
 def call_started():
     data = request.json
     call_id = data.get('call_id')
+    caller_phone = data.get('from')  # Extract caller phone number
     
     if not call_id:
         return jsonify({'error': 'call_id required'}), 400
@@ -21,7 +22,7 @@ def call_started():
     if call_id in active_sessions:
         return jsonify({'status': 'already running'}), 200
     
-    assistant = CallAssistant()
+    assistant = CallAssistant(caller_phone=caller_phone)
     stop_event = Event()
     
     def run_assistant():
@@ -53,7 +54,8 @@ def call_started():
     
     return jsonify({
         'status': 'success',
-        'message': f'Voice assistant started for call {call_id}'
+        'message': f'Voice assistant started for call {call_id}',
+        'caller_phone': caller_phone
     }), 200
 
 

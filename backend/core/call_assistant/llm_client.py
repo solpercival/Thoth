@@ -1,11 +1,10 @@
 import ollama
 
 
-
 # Input a prompt into the llm, default model is the lightest one. Returns the llm response
 class OllamaClient:
 
-    def __init__(self, model: str = 'gemma3:270m', system_prompt: str = None):
+    def __init__(self, model: str = 'gemma3:1b', system_prompt: str = None):
         self.model_name = model
         self.messages = []
 
@@ -87,8 +86,12 @@ class OllamaClient:
 # NOTE: FOR DEBUGGING
 def main():
     print("START MESSAGING THE LLM NOW")
+    # Example: Use remote Open WebUI
+    # llm = OllamaClient(model='llama2', remote_url='http://192.168.x.x:8000')
+    
+    # Or use local Ollama (default)
     llm = OllamaClient(model='gemma3:1b')
-    user_input:str = ""
+    user_input: str = ""
 
     while True:
         user_input = input()
