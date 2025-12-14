@@ -11,7 +11,15 @@ def choose_agent(llm_response:str) -> Agent:
 
     match llm_response:
         case "<LOGIN>": 
+            return "Login agent requested"
+        
+        case "<SHIFT>":
+            return "Shift related agetn requested"
+        
+        # User asks for a task that is not allowed / unknown
+        case "<DENY>":
             return None
+        
 
 
     return None
