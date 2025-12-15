@@ -1,11 +1,9 @@
 """Check what shifts actually exist for the staff"""
 import asyncio
-import sys
-sys.path.insert(0, '.')
 
-from login_playwright import LoginAutomation
-from staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
-from secrets import get_admin_creds
+from backend.automation.login_playwright import LoginAutomation
+from backend.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+from backend.automation.secrets import get_admin_creds
 
 async def main():
     login = LoginAutomation(use_saved_session=False)

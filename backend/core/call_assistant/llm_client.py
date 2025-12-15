@@ -22,6 +22,27 @@ class OllamaClient:
             })
 
 
+    def set_system_prompt(self, system_prompt: str) -> None:
+        """
+        Updates the system prompt for the LLM.
+
+        Args:
+            system_prompt (str): The new system prompt to set
+        """
+        system_message = {
+            'role': 'system',
+            'content': system_prompt
+        }
+
+        # Check if there's already a system prompt (first message with role 'system')
+        if self.messages and self.messages[0]['role'] == 'system':
+            # Update existing system prompt
+            self.messages[0] = system_message
+        else:
+            # Insert new system prompt at the beginning
+            self.messages.insert(0, system_message)
+
+
     def ask_llm(self, prompt:str) -> str:
         """
         Send prompt to LLM, and return its response. Conversation history is remembered.
