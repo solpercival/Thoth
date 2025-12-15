@@ -5,6 +5,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+import asyncio
 from time import sleep
 from threading import Event
 from backend.core.call_assistant.system_audio_whisper_client import SystemAudioWhisperClient
@@ -129,7 +130,8 @@ class CallAssistant:
             print(f"[ROUTING] Shift check request for {self.caller_phone}")
             # Would trigger shift checking here (async integration)
             # await check_shifts_for_caller(service_name="hahs_vic3495", caller_phone=self.caller_phone)
-            result: str = test_integrated_workflow(self.caller_phone, self.transcript)
+            result = asyncio.run(test_integrated_workflow(self.caller_phone, self.transcript))
+            print("===RESULTS===")
             print(result)
             # For now
             return "Your shift has been cancelled" 
