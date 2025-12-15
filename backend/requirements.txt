@@ -1,6 +1,5 @@
 annotated-types==0.7.0
 anyio==4.11.0
-audioop-lts==0.2.2
 blinker==1.9.0
 certifi==2025.11.12
 cffi==2.0.0
@@ -28,8 +27,8 @@ openai-whisper @ git+https://github.com/openai/whisper.git@c0d2f624c09dc18e709e3
 playwright==1.50.0
 beautifulsoup4==4.13.0
 PyAudio==0.2.14
-PyAudioWPatch==0.2.12.7
 pycparser==2.23
+pyotp==2.9.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 regex==2025.11.3
