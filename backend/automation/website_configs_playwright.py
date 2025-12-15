@@ -1,6 +1,49 @@
 """
-Website configurations for Playwright-based login automation
-Customized for different websites with selectors and 2FA support
+WEBSITE CONFIGURATION & SELECTORS
+
+In the workflow:
+    test_integrated_workflow.py
+        ↓
+        login_playwright.py (needs selectors to find form fields)
+        ↓
+        website_configs_playwright.py ← YOU ARE HERE
+            Provides:
+            - CSS selectors for username/password fields
+            - Submit button selector
+            - Expected URL after login (for verification)
+            - 2FA field selector
+            - Timeout values
+        ↓
+        Used to log in and navigate Ezaango
+        ↓
+        staff_lookup.py (uses authenticated page)
+
+What This File Contains:
+    - WebsiteConfig dataclass definitions
+    - Selectors for each website's login form
+    - Expected URLs after login (for verification)
+    - 2FA field selectors (for TOTP entry)
+
+Key Configs:
+    - HAHS_VIC3495_CONFIG: Main Ezaango site configuration
+        url: https://hahs-vic3495.ezaango.app/login
+        strategy: TWO_FACTOR (requires 2FA)
+        username_selector: input[id='email'][type='email']
+        password_selector: input[id='password'][type='password']
+        submit_selector: button[type='submit']
+        two_fa_selector: input[id='one_time_password']
+        expected_url_after_login: https://hahs-vic3495.ezaango.app/
+
+To Add New Website:
+    1. Inspect login form in browser (F12)
+    2. Right-click form fields
+    3. Copy CSS selector
+    4. Create new WebsiteConfig with selectors
+    5. Call get_config("service_name") to use it
+
+Used By:
+    - login_playwright.py: Gets config to know which selectors to use
+    - test_integrated_workflow.py: Passes config to login
 """
 
 try:

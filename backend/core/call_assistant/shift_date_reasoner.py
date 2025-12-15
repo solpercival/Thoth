@@ -1,13 +1,58 @@
 """
-LLM-based date reasoning for shift queries.
+LLM-BASED DATE REASONING MODULE
 
-Uses Ollama/local LLM to intelligently determine which dates
-the user is asking about when they request shift information.
+In the workflow:
+    test_integrated_workflow.py (calls test_date_reasoner.py)
+        ↓
+        login_playwright.py (returns authenticated page)
+        ↓
+        staff_lookup.py (finds staff by phone)
+        ↓
+        shift_date_reasoner.py ← YOU ARE HERE
+            - Takes user transcript: "Cancel my shift tomorrow"
+            - Sends to Ollama (local LLM) with system prompt
+            - LLM interprets dates and returns JSON
+            - Returns structured date range for filtering
+        ↓
+        staff_lookup.py (searches for shifts by name)
+        ↓
+        test_integrated_workflow.py (filters shifts by dates)
 
-Instead of scraping all historical shifts, we ask the LLM:
-- What dates is the user interested in?
-- Are they asking about today, tomorrow, next week?
-- Should we include upcoming shifts only?
+Key Class:
+    ShiftDateReasoner
+        Constructor: __init__(model="gemma3:1b")
+        Main method: reason_dates(user_query)
+            
+Main Function:
+    reason_dates(user_query: str)
+        Input: "Hi I would like to cancel my shift tomorrow"
+        Output: {
+            "is_shift_query": True,
+            "date_range_type": "tomorrow",
+            "start_date": "2025-12-16",
+            "end_date": "2025-12-16",
+            "reasoning": "Cancellation of shift tomorrow."
+        }
+
+How It Works:
+    1. Receives user transcript from test_integrated_workflow.py
+    2. Builds prompt with:
+       - System prompt (instructions for LLM)
+       - User query
+       - Current date context
+    3. Sends to Ollama HTTP endpoint: POST http://127.0.0.1:11434/api/chat
+    4. Ollama (gemma3:1b model) responds with JSON
+    5. Parses JSON response
+    6. Returns structured date range
+
+Dependencies:
+    - llm_client.py: OllamaClient (HTTP requests to Ollama)
+    - Ollama server: Must be running (ollama serve)
+    - gemma3:1b model: Must be pulled (ollama pull gemma3:1b)
+
+Used By:
+    - test_integrated_workflow.py: Calls reason_dates() to interpret user transcript
+    - Manual testing: test_date_reasoner.py
 """
 import json
 import logging

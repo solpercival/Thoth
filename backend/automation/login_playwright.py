@@ -1,7 +1,62 @@
 """
-Automated Login Script using Playwright - Receives LLM-reasoned credentials and logs into websites
-Supports 2FA with session persistence for subsequent automated actions
-Integrates with core LLM pipeline for credential reasoning and web scraping
+BROWSER AUTOMATION & 2FA LOGIN MODULE
+
+In the workflow:
+    test_integrated_workflow.py
+        ↓
+        login_playwright.py ← YOU ARE HERE
+            Uses:
+            - website_configs_playwright.py (selectors + expected URLs)
+            - secrets.py (get TOTP codes for 2FA)
+        ↓
+        Returns authenticated page object to test_integrated_workflow.py
+            (which then uses it with staff_lookup.py and shift_date_reasoner.py)
+
+Key Classes:
+    - PlaywrightAutoLogin: Low-level browser automation
+        Methods: login_standard(), login_with_llm_credentials(), login()
+    
+    - LoginAutomation: High-level orchestrator (context manager)
+        Methods: login_with_retry(), get_page(), close()
+        
+Main Functions:
+    - Handles website login (username/password)
+    - Detects and fills 2FA codes automatically
+    - Waits for page navigation to complete (key fix!)
+    - Saves/loads session state for persistence
+    - Takes screenshots on errors for debugging
+
+Flow Within This Module:
+    1. LoginAutomation.__init__()
+        → Creates PlaywrightAutoLogin instance
+    2. login_with_retry()
+        → Calls login_with_llm_credentials()
+        → Which calls PlaywrightAutoLogin.login()
+        → Which calls login_standard()
+    3. login_standard() does:
+        → Check if already logged in (session cached)
+        → Navigate to login URL (with timeout handling)
+        → Fill username field
+        → Fill password field
+        → Click submit button
+        → Detect and fill 2FA field
+        → WAIT FOR NAVIGATION (this was the async bug!)
+        → Verify login success
+        → Save session for next time
+
+Critical Fix Applied:
+    Added: await self.page.wait_for_url("**/home**", timeout=10000)
+    This ensures page completes navigation to home before returning.
+    Without this, subsequent functions would fail with "Still on login page" errors.
+
+Dependencies:
+    - website_configs_playwright.py: Provides selector strings and expected URLs
+    - secrets.py: Generates TOTP codes for 2FA
+    - playwright library: Browser automation
+
+Used By:
+    - test_integrated_workflow.py: Main workflow orchestrator
+    - Other test files that need to log in
 """
 
 import os
@@ -196,7 +251,7 @@ class PlaywrightAutoLogin:
         return locator
 
     async def login_standard(
-        self, config: WebsiteConfig, credentials: Credentials, service_name: str
+        self, config: WebsiteConfig, credentials: Credentials, service_name: str, use_saved_session: bool = True
     ) -> bool:
         """
         Standard username/password login with optional 2FA.
@@ -219,14 +274,22 @@ class PlaywrightAutoLogin:
         try:
             logger.info(f"Attempting login to {config.url}")
             
-            await self._initialize_context(service_name)
+            await self._initialize_context(service_name, use_saved_session=use_saved_session)
             
             if not self.page:
                 logger.error("Page failed to initialize")
                 return False
 
-            await self.page.goto(config.url, wait_until="networkidle")
+            await self.page.goto(config.url, wait_until="domcontentloaded", timeout=15000)
             logger.info(f"Navigated to login page: {self.page.url}")
+
+            # Check if already logged in (saved session redirect)
+            if self.page.url != config.url and config.expected_url_after_login:
+                expected_path = config.expected_url_after_login.rstrip("/")
+                current_path = self.page.url.rstrip("/")
+                if expected_path == current_path or current_path.startswith(expected_path + "/"):
+                    logger.info(f"✓ Already logged in! Skipping login form. Current URL: {self.page.url}")
+                    return True
 
             # Step 1: Fill username field
             logger.info(f"Step 1: Looking for username field: {config.username_selector}")
@@ -321,6 +384,15 @@ class PlaywrightAutoLogin:
                         # Wait for post-2FA navigation
                         await self.page.wait_for_load_state("networkidle")
                         logger.info(f"Page loaded after 2FA. Current URL: {self.page.url}")
+                        
+                        # Explicitly wait for navigation to home page
+                        try:
+                            logger.info("Waiting for navigation to home page...")
+                            await self.page.wait_for_url("**/home**", timeout=10000)
+                            logger.info(f"✓ Successfully navigated to home. URL: {self.page.url}")
+                        except Exception as e:
+                            logger.warning(f"Did not reach /home within timeout: {e}")
+                            logger.info(f"Current URL after 2FA: {self.page.url}")
                     else:
                         logger.info("2FA field found but no code available. Waiting for manual intervention (60 seconds)...")
                         await asyncio.sleep(60)
@@ -372,7 +444,7 @@ class PlaywrightAutoLogin:
             return False
 
     async def login(
-        self, config: WebsiteConfig, credentials: Credentials, service_name: str
+        self, config: WebsiteConfig, credentials: Credentials, service_name: str, use_saved_session: bool = True
     ) -> bool:
         """
         Main login method that dispatches to appropriate strategy
@@ -381,6 +453,7 @@ class PlaywrightAutoLogin:
             config: Website configuration
             credentials: User credentials
             service_name: Service name for session management
+            use_saved_session: Whether to load and use saved sessions (default True)
             
         Returns:
             True if login successful, False otherwise
@@ -389,7 +462,7 @@ class PlaywrightAutoLogin:
             await self._initialize_browser()
 
         if config.strategy in [LoginStrategy.STANDARD, LoginStrategy.TWO_FACTOR]:
-            return await self.login_standard(config, credentials, service_name)
+            return await self.login_standard(config, credentials, service_name, use_saved_session=use_saved_session)
         else:
             logger.warning(f"Strategy {config.strategy} not yet implemented")
             return False
@@ -426,6 +499,7 @@ class LoginAutomation:
         max_retries: int = 3,
         retry_delay: int = 5,
         session_dir: str = ".sessions",
+        use_saved_session: bool = True,
     ):
         """
         Initialize login automation
@@ -435,14 +509,16 @@ class LoginAutomation:
             max_retries: Maximum number of login attempts
             retry_delay: Delay between retries in seconds
             session_dir: Directory to store session authentication states
+            use_saved_session: Whether to load and use saved sessions (default True)
         """
         self.auto_login = PlaywrightAutoLogin(headless=headless, session_dir=session_dir)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.use_saved_session = use_saved_session
         self.last_scraped_content: Optional[str] = None
 
     async def login_with_llm_credentials(
-        self, config: WebsiteConfig, service_name: str, llm_credentials: Dict
+        self, config: WebsiteConfig, service_name: str, llm_credentials: Dict, use_saved_session: bool = True
     ) -> bool:
         """
         Login using credentials reasoned out by LLM
@@ -452,6 +528,7 @@ class LoginAutomation:
             service_name: Service name for session management
             llm_credentials: Dictionary with LLM-reasoned credentials
                 Expected keys: 'username', 'password', optionally 'email', 'extra_fields', 'two_fa_code'
+            use_saved_session: Whether to load and use saved sessions (default True)
             
         Returns:
             True if login successful, False otherwise
@@ -461,7 +538,7 @@ class LoginAutomation:
             credentials = Credentials.from_llm_output(llm_credentials)
             
             logger.info(f"Attempting login to {config.url} with LLM-reasoned credentials")
-            return await self.auto_login.login(config, credentials, service_name)
+            return await self.auto_login.login(config, credentials, service_name, use_saved_session=use_saved_session)
             
         except Exception as e:
             logger.error(f"Login failed with error: {e}")
@@ -494,7 +571,7 @@ class LoginAutomation:
             logger.info(f"Login attempt {attempt}/{self.max_retries}")
             
             success = await self.login_with_llm_credentials(
-                config, service_name, llm_credentials
+                config, service_name, llm_credentials, use_saved_session=self.use_saved_session
             )
             
             if success:
