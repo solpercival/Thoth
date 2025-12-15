@@ -58,7 +58,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
-from llm_client import OllamaClient
+from backend.core.call_assistant.llm_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 

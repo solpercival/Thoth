@@ -1,13 +1,19 @@
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from time import sleep
 from threading import Event
-from system_audio_whisper_client import SystemAudioWhisperClient
-from llm_client import OllamaClient
+from backend.core.call_assistant.system_audio_whisper_client import SystemAudioWhisperClient
+from backend.core.call_assistant.llm_client import OllamaClient
 from typing import Optional
 
+from backend.core.call_assistant.tts_client import TTSClient
+from backend.automation.test_integrated_workflow import test_integrated_workflow
 
-from agents.agent import Agent
-from agents.agent_chooser import choose_agent
-from tts_client import TTSClient
 # Own dependencies
 LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. You are a call center routing agent. Your ONLY job is to classify user requests and output exactly ONE of the following tags. You must NEVER write explanations, stories, or any other text.
 
@@ -40,6 +46,7 @@ class CallAssistant:
         self.llm_client: OllamaClient = OllamaClient(model="gemma3:1b", system_prompt=LLM_SYSTEM_PROMPT)
         self.whisper_client: SystemAudioWhisperClient = None
         self.llm_response_array = []
+        self.transcript = ""
 
 
     def on_phrase_complete(self, phrase:str) -> None:
@@ -53,6 +60,8 @@ class CallAssistant:
         print(f"[PHRASE COMPLETE]\n{phrase}")
         if self.caller_phone:
             print(f"[CALLER PHONE] {self.caller_phone}")
+        
+        self.transcript = phrase
 
         # Pause the whisper client, send phrase to LLM, and print response
         print("[SENDING TO LLM]")
@@ -120,6 +129,8 @@ class CallAssistant:
             print(f"[ROUTING] Shift check request for {self.caller_phone}")
             # Would trigger shift checking here (async integration)
             # await check_shifts_for_caller(service_name="hahs_vic3495", caller_phone=self.caller_phone)
+            result: str = test_integrated_workflow(self.caller_phone, self.transcript)
+            print(result)
             # For now
             return "Your shift has been cancelled" 
         
