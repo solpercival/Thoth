@@ -88,8 +88,8 @@ class CallAssistant:
         # tts_play(llm_response)
 
         print(route_response)
-        tts_client: TTSClient = TTSClient()
-        tts_client.text_to_speech(route_response)
+        #tts_client: TTSClient = TTSClient()
+        #tts_client.text_to_speech(route_response)
 
         # Resume the whisper client again
         self.whisper_client.resume()

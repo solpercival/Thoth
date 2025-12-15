@@ -5,8 +5,36 @@ import speech_recognition as sr
 import whisper
 import torch
 import threading
-import pyaudio
 import platform
+
+# Suppress ALSA warnings on Linux
+from ctypes import *
+from contextlib import contextmanager
+
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+def py_error_handler(filename, line, function, err, fmt):
+    pass
+
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
+@contextmanager
+def noalsaerr():
+    try:
+        asound = cdll.LoadLibrary('libasound.so.2')
+        asound.snd_lib_error_set_handler(c_error_handler)
+        yield
+    except:
+        yield
+    finally:
+        try:
+            asound.snd_lib_error_set_handler(None)
+        except:
+            pass
+
+# Import pyaudio with ALSA errors suppressed
+with noalsaerr():
+    import pyaudio
 
 from datetime import datetime, timedelta
 from queue import Queue
@@ -67,10 +95,16 @@ class SystemAudioWhisperClient:
         self.stream = None
         self.audio_model = None
         self.device_info = None
+        self.current_source = None
+        self.source_channels = 2  # Default to stereo
+        self.source_sample_rate = 44100  # Default sample rate
+        self.source_check_thread = None
+        self.last_source_check = 0
         
     def _get_system_audio_device(self):
         """Get the appropriate system audio device based on OS"""
-        p = pyaudio.PyAudio()
+        with noalsaerr():
+            p = pyaudio.PyAudio()
         
         system = platform.system()
         
@@ -97,24 +131,65 @@ class SystemAudioWhisperClient:
                 raise
         
         elif system == "Linux":
-            # Find PulseAudio monitor device
-            monitor_device = None
+            # Find any active audio source in PyAudio
+            import subprocess
             
-            for i in range(p.get_device_count()):
-                info = p.get_device_info_by_index(i)
+            # Get list of all sources and find the first RUNNING one, otherwise IDLE
+            result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
+                                capture_output=True, text=True)
+            
+            active_source = None
+            idle_source = None
+            
+            for line in result.stdout.strip().split('\n'):
+                if not line or line.startswith('#'):
+                    continue
+                    
+                parts = line.split()
+                if len(parts) >= 5:
+                    source_name = parts[1]
+                    status = parts[4] if len(parts) > 4 else ''
+                    
+                    # Prioritize RUNNING sources (actively capturing audio)
+                    if 'RUNNING' in status:
+                        active_source = source_name
+                        print(f"Found RUNNING audio source: {source_name}")
+                        break
+                    # Keep track of first IDLE source as backup
+                    elif 'IDLE' in status and idle_source is None:
+                        idle_source = source_name
+            
+            # Use running source, or fall back to idle, or use default
+            selected_source = active_source or idle_source
+            
+            if selected_source:
+                print(f"Using audio source: {selected_source}")
+                subprocess.run(['pactl', 'set-default-source', selected_source])
+                os.environ['PULSE_SOURCE'] = selected_source
+                self.current_source = selected_source
                 
-                # Look for monitor device (captures system audio output)
-                if 'monitor' in info['name'].lower() and info['maxInputChannels'] > 0:
-                    monitor_device = info
-                    break
+                # Get actual channel count and sample rate from the source
+                self._update_source_info(selected_source)
+            else:
+                print("No active audio source found, using system default")
+                self.current_source = None
             
-            if monitor_device is None:
-                print("\nNo monitor device found!")
-                print("Make sure PulseAudio is running and monitor devices are available.")
+            # Find the 'pulse' device in PyAudio
+            pulse_device = None
+            
+            with noalsaerr():
+                for i in range(p.get_device_count()):
+                    info = p.get_device_info_by_index(i)
+                    if info['name'] == 'pulse' and info['maxInputChannels'] > 0:
+                        pulse_device = info
+                        break
+            
+            if pulse_device is None:
+                print("No PulseAudio device found in PyAudio")
                 p.terminate()
-                raise ValueError("No monitor device found")
+                raise ValueError("No pulse device found")
             
-            return p, monitor_device
+            return p, pulse_device
         
         else:
             print(f"Unsupported platform: {system}")
@@ -136,28 +211,126 @@ class SystemAudioWhisperClient:
         self.audio_model = whisper.load_model(model)
         print("Model loaded.")
     
-    def _audio_capture_loop(self):
-        """Capture audio from system and put into queue."""
+    def _update_source_info(self, source_name):
+        """Get channel count and sample rate from PulseAudio source"""
+        import subprocess
         try:
-            # Open stream with device-specific settings
-            # We'll use 16kHz for Whisper compatibility
+            # Parse from pactl list sources short output (format: s16le 2ch 48000Hz)
+            result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
+                                capture_output=True, text=True, timeout=1)
+            
+            for line in result.stdout.strip().split('\n'):
+                if source_name in line:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        # Extract channel count (e.g., "2ch" -> 2)
+                        channels_str = parts[3]
+                        if 'ch' in channels_str:
+                            self.source_channels = int(channels_str.replace('ch', ''))
+                        
+                        # Extract sample rate (e.g., "48000Hz" -> 48000)
+                        rate_str = parts[4] if len(parts) > 4 else '44100Hz'
+                        if 'Hz' in rate_str:
+                            self.source_sample_rate = int(rate_str.replace('Hz', ''))
+                        
+                        print(f"Source info: {self.source_channels}ch @ {self.source_sample_rate}Hz")
+                        break
+        except Exception as e:
+            print(f"Could not get source info, using defaults: {e}")
+            self.source_channels = 2
+            self.source_sample_rate = 44100
+    
+    def _check_and_switch_source(self):
+        """Check for RUNNING audio sources and switch if needed (Linux only)"""
+        if platform.system() != "Linux":
+            return False
+            
+        import subprocess
+        import time
+        
+        # Only check every 3 seconds to avoid excessive system calls
+        current_time = time.time()
+        if current_time - self.last_source_check < 3:
+            return False
+        
+        self.last_source_check = current_time
+        
+        try:
+            result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
+                                capture_output=True, text=True, timeout=1)
+            
+            for line in result.stdout.strip().split('\n'):
+                if not line or line.startswith('#'):
+                    continue
+                    
+                parts = line.split()
+                if len(parts) >= 5:
+                    source_name = parts[1]
+                    status = parts[4] if len(parts) > 4 else ''
+                    
+                    # If we find a RUNNING source and it's different from current
+                    if 'RUNNING' in status and source_name != self.current_source:
+                        print(f"\n🔄 Switching to active audio source: {source_name}")
+                        subprocess.run(['pactl', 'set-default-source', source_name])
+                        os.environ['PULSE_SOURCE'] = source_name
+                        self.current_source = source_name
+                        
+                        # Update source info (channels and sample rate)
+                        self._update_source_info(source_name)
+                        
+                        # Close and reopen stream with new source
+                        if self.stream:
+                            self.stream.stop_stream()
+                            self.stream.close()
+                        
+                        # Reopen with same settings
+                        self._open_audio_stream()
+                        return True
+        except Exception as e:
+            print(f"Error checking audio sources: {e}")
+        
+        return False
+    
+    def _open_audio_stream(self):
+        """Open the audio stream with current device settings"""
+        # On Linux with pulse device, use actual source channels
+        if platform.system() == "Linux" and self.device_info["name"] == "pulse":
+            channels = self.source_channels
+            rate = self.source_sample_rate
+        else:
+            channels = int(self.device_info["maxInputChannels"])
+            rate = int(self.device_info["defaultSampleRate"])
+
+        self.stream = self.pyaudio_instance.open(
+            format=pyaudio.paInt16,
+            channels=channels,
+            rate=rate,
+            input=True,
+            frames_per_buffer=1024,
+            input_device_index=self.device_info["index"]
+        )
+        
+        print(f"Audio capture started (rate: {rate}Hz, channels: {channels})")
+    
+    def _audio_capture_loop(self):
+        """Capture audio from active audio source and put into queue."""
+        try:
+            # Open initial stream
             target_rate = 16000
             
-            self.stream = self.pyaudio_instance.open(
-                format=pyaudio.paInt16,
-                channels=int(self.device_info["maxInputChannels"]),
-                rate=int(self.device_info["defaultSampleRate"]),
-                input=True,
-                frames_per_buffer=1024,
-                input_device_index=self.device_info["index"]
-            )
-            
-            source_rate = int(self.device_info["defaultSampleRate"])
-            channels = int(self.device_info["maxInputChannels"])
-            
-            print(f"Audio capture started (rate: {source_rate}Hz, channels: {channels})")
+            self._open_audio_stream()
             
             while self.is_running:
+                # Check for active audio sources and switch if needed
+                self._check_and_switch_source()
+                
+                # Get current stream settings (use actual source channels)
+                if platform.system() == "Linux" and self.device_info["name"] == "pulse":
+                    channels = self.source_channels
+                    source_rate = self.source_sample_rate
+                else:
+                    channels = int(self.device_info["maxInputChannels"])
+                    source_rate = int(self.device_info["defaultSampleRate"])
                 # Only capture audio if not paused
                 if not self.is_paused:
                     # Read audio data

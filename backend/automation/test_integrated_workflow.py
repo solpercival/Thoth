@@ -46,14 +46,28 @@ Usage:
 """
 import asyncio
 import sys
+import os
 import argparse
 from datetime import datetime
 
-from backend.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
-from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
-from backend.automation.login_playwright import LoginAutomation
-from backend.automation.website_configs_playwright import get_config
-from backend.automation.secrets import get_admin_credentials, get_admin_totp_code
+# Add parent directories to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Try both relative and absolute imports
+try:
+    from backend.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+    from backend.automation.login_playwright import LoginAutomation
+    from backend.automation.website_configs_playwright import get_config
+    from backend.automation.secrets import get_admin_credentials, get_admin_totp_code
+    from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
+except ModuleNotFoundError:
+    from staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+    from login_playwright import LoginAutomation
+    from website_configs_playwright import get_config
+    from secrets import get_admin_credentials, get_admin_totp_code
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'core', 'call_assistant'))
+    from shift_date_reasoner import ShiftDateReasoner
 
 
 async def test_integrated_workflow(phone_number: str, transcript: str):
