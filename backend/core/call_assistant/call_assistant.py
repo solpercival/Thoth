@@ -20,7 +20,7 @@ LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. Yo
 
 CLASSIFICATION RULES:
 - If user asks about app login issues → output: <LOGIN>
-- If user asks about their work shift/schedule → output: <SHIFT>
+- If user asks about their work shift/schedule OR asks to cancel their shift→ output: <SHIFT>
 - If user asks to speak with a real person → output: <REAL>
 - For ALL other requests → output: <DENY>
 
@@ -34,7 +34,8 @@ User: "Tell me a joke" → <DENY>
 User: "What's the weather?" → <DENY>
 """
 
-AGENT_SYSTEM_PROMPT = """
+FORMAT_SYSTEM_PROMPT = """
+    Can you format this list into a readable version
 """
 
 
@@ -129,12 +130,25 @@ class CallAssistant:
         if "<SHIFT>" in intent_tag and self.caller_phone:
             print(f"[ROUTING] Shift check request for {self.caller_phone}")
             # Would trigger shift checking here (async integration)
-            # await check_shifts_for_caller(service_name="hahs_vic3495", caller_phone=self.caller_phone)
-            result = asyncio.run(test_integrated_workflow(self.caller_phone, self.transcript))
+            #{
+            #    'staff': staff,
+            #    'dates': date_info,
+            #    'all_shifts': all_shifts,
+            #    'filtered_shifts': filtered_shifts
+            #}
+
+            result:dict = asyncio.run(test_integrated_workflow(self.caller_phone, self.transcript))
             print("===RESULTS===")
             print(result)
+
+            # Switch the system prompt to formating now
+            #self.llm_client.set_system_prompt(FORMAT_SYSTEM_PROMPT)
+
+            # Ask LLM to format the replies, to make it TTS friendly
+            #formatted_output:str = self.llm_client.ask_llm(result)
+
             # For now
-            return "Your shift has been cancelled" 
+            return 'formatted_output'
         
         elif "<LOGIN>" in intent_tag:
             print(f"[ROUTING] Login assistance requested")

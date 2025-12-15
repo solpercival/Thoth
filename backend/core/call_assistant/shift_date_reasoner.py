@@ -62,6 +62,9 @@ from backend.core.call_assistant.llm_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
+#<CNCL>
+#<SHOW>
+
 
 class ShiftDateReasoner:
     """
@@ -76,7 +79,7 @@ TASK: Given a user's query about their shifts, output ONLY a JSON object (no oth
     "date_range_type": "today" | "tomorrow" | "week" | "month" | "specific",
     "start_date": "YYYY-MM-DD",
     "end_date": "YYYY-MM-DD",
-    "reasoning": "brief explanation"
+    "reasoning": Either <CNCL> if the client wants to cancel or <SHOW> if the client wants to know their shift + "brief explanation"
 }}
 
 DATE INTERPRETATION RULES:
