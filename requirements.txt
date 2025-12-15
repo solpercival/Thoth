@@ -37,10 +37,13 @@ pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
 pyee==12.1.1
+pyotp==2.9.0
 pypiwin32==223
 PySocks==1.7.1
 pyttsx3==2.99
 pywin32==311
+gTTS==2.5.4
+pydub==0.25.1
 regex==2025.11.3
 requests==2.32.5
 selenium==4.38.0
