@@ -1,11 +1,52 @@
 """
-Unified secrets management for all sensitive data.
-Reads from .env file (gitignored, never committed).
+SECRETS MANAGEMENT MODULE
 
-Priority order:
-1. Environment variables (highest security)
-2. .env file in workspace root
-3. Fallback defaults (testing only)
+In the workflow:
+    test_integrated_workflow.py
+        ↓
+        secrets.py ← YOU ARE HERE
+            Provides:
+            - get_admin_credentials(service_name) → username, password
+            - get_admin_totp_code(service_name) → 6-digit TOTP code
+        ↓
+        login_playwright.py
+            Uses credentials from secrets.py
+            Uses TOTP code from secrets.py for 2FA
+        ↓
+        Logs into Ezaango successfully with 2FA
+
+Key Functions:
+    get_admin_credentials(service_name)
+        Input: "hahs_vic3495"
+        Output: {"username": "...", "password": "..."}
+        Source: .env file environment variables
+    
+    get_admin_totp_code(service_name)
+        Input: "hahs_vic3495"
+        Output: "123456" (6-digit code)
+        Calculation: Uses TOTP_SECRET_HAHS_VIC3495 with RFC 6238 standard
+        Regenerates: Every 30 seconds
+    
+Environment Variables Required:
+    ADMIN_USERNAME_HAHS_VIC3495="admin@example.com"
+    ADMIN_PASSWORD_HAHS_VIC3495="your_password"
+    TOTP_SECRET_HAHS_VIC3495="your_totp_base32_secret"
+
+Where to Get TOTP Secret:
+    1. Go to Ezaango 2FA settings
+    2. Generate new authenticator QR code
+    3. Use "Enter setup key manually" option
+    4. Copy the base32 secret
+    5. Add to .env: TOTP_SECRET_HAHS_VIC3495="base32_secret"
+
+Priority Order:
+    1. Environment variables (highest security)
+    2. .env file in workspace root
+    3. Fallback defaults (testing only)
+
+Used By:
+    - login_playwright.py: Gets credentials and TOTP codes
+    - test_integrated_workflow.py: Passes to login_with_retry()
 """
 
 import os

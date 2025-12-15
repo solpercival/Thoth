@@ -1,8 +1,49 @@
 """
-Staff lookup by phone number.
+STAFF & SHIFT LOOKUP MODULE
 
-Uses Ezaango's staff search page (/staff/4) to find employee details
-by phone number. Returns the full name which can then be used to filter shifts.
+In the workflow:
+    test_integrated_workflow.py
+        ↓
+        login_playwright.py (returns authenticated page)
+        ↓
+        staff_lookup.py ← YOU ARE HERE
+            Functions:
+            [1] lookup_staff_by_phone(page, phone) - Find staff by phone
+                Uses: website_configs_playwright.py (selectors)
+                Returns: staff dict {id, full_name, email, team, mobile}
+            ↓
+            [2] search_staff_shifts_by_name(page, name) - Find shifts by staff name
+                Uses: website_configs_playwright.py (selectors)
+                Returns: list of shifts {client_name, type, date, time, shift_id}
+        ↓
+        shift_date_reasoner.py (filters results to date range)
+
+Key Functions:
+    1. _remove_title(name)
+        - Strips Ms/Mr/Dr/Prof from names
+        - Input: "Ms Alannah Courtnay"
+        - Output: "Alannah Courtnay"
+    
+    2. lookup_staff_by_phone(page, phone_number)
+        - Navigates to https://hahs-vic3495.ezaango.app/staff/4
+        - Searches for phone number
+        - Extracts: id, full_name, email, team, mobile, address, status
+        - Returns: dict with staff details
+    
+    3. search_staff_shifts_by_name(page, staff_name)
+        - Navigates to https://hahs-vic3495.ezaango.app/search?keyword=staff+name
+        - Parses table rows
+        - Extracts: type, staff_name, client_name, date, time, shift_id
+        - Returns: list of shift dicts
+
+Dependencies:
+    - BeautifulSoup: HTML parsing
+    - website_configs_playwright.py: CSS selectors for elements
+    - Playwright Page object: From login_playwright.py
+
+Used By:
+    - test_integrated_workflow.py: Calls both lookup_staff_by_phone() and search_staff_shifts_by_name()
+    - Other test files: test_automation.py has individual function tests
 """
 import logging
 from typing import Optional, Dict
@@ -189,21 +230,25 @@ def phones_match(phone1: str, phone2: str) -> bool:
     return norm1 == norm2
 
 
-async def search_staff_shifts_by_name(page, staff_name: str) -> list:
+async def search_staff_shifts_by_name(page, staff_name: str, start_date: str = None, end_date: str = None) -> list:
     """
-    Search for all shifts by staff name on Ezaango search page.
+    Search for shifts by staff name on Ezaango search page with optional date filtering.
     
     Navigates to: https://hahs-vic3495.ezaango.app/search?keyword=name+name
+    If dates provided, uses the search form to filter by date range.
     Parses table rows to extract shift information.
     
     Handles:
     - Multiple shifts per day for same staff
     - Repeated clients (client may appear multiple times with different times)
     - Extracting date and time from client_info string
+    - Optional date range filtering via search form
     
     Args:
         page: Playwright page object (already logged in)
         staff_name: Staff name to search for (e.g., "Alannah Courtnay")
+        start_date: Optional start date in YYYY-MM-DD format (from shift_date_reasoner)
+        end_date: Optional end date in YYYY-MM-DD format (from shift_date_reasoner)
     
     Returns:
         List of dicts with shift details:
@@ -240,8 +285,12 @@ async def search_staff_shifts_by_name(page, staff_name: str) -> list:
         table_html = await page.content()
         soup = BeautifulSoup(table_html, "html.parser")
         
+        # Debug: Log what we're looking for
+        logger.debug(f"Looking for table rows in HTML...")
+        
         # Find all table rows with role="row"
         rows = soup.find_all("tr", {"role": "row"})
+        logger.info(f"Found {len(rows)} rows in table with role='row'")
         if not rows:
             logger.info(f"No shifts found for staff: {staff_name}")
             return []
@@ -251,6 +300,7 @@ async def search_staff_shifts_by_name(page, staff_name: str) -> list:
             try:
                 tds = row.find_all("td")
                 if len(tds) < 3:
+                    logger.debug(f"Skipping row with {len(tds)} columns (need at least 3)")
                     continue
                 
                 # Extract columns: Type | Staff Name | Client Info
@@ -269,6 +319,8 @@ async def search_staff_shifts_by_name(page, staff_name: str) -> list:
                 date = None
                 time = None
                 
+                logger.debug(f"Parsing shift row: {client_info_raw}")
+                
                 if " on " in client_info_raw and " at " in client_info_raw:
                     # Split by " on " to get client name and rest
                     parts = client_info_raw.split(" on ")
@@ -280,6 +332,10 @@ async def search_staff_shifts_by_name(page, staff_name: str) -> list:
                         date_time_split = remainder.split(" at ")
                         date = date_time_split[0].strip()
                         time = date_time_split[1].strip() if len(date_time_split) > 1 else None
+                    else:
+                        logger.debug(f"  Unable to extract time from: {remainder}")
+                else:
+                    logger.debug(f"  Unable to parse format: {client_info_raw}")
                 
                 shift_data = {
                     "type": shift_type,
@@ -298,6 +354,35 @@ async def search_staff_shifts_by_name(page, staff_name: str) -> list:
             except Exception as e:
                 logger.warning(f"Error parsing row: {e}")
                 continue
+        
+        # Filter results by date range if provided (client-side filtering)
+        if start_date or end_date:
+            logger.info(f"Filtering shifts by date range: {start_date} to {end_date}")
+            filtered_shifts = []
+            
+            for shift in shifts:
+                shift_date = shift.get("date")
+                if not shift_date:
+                    continue
+                
+                # Parse shift date from DD-MM-YYYY format to comparable YYYY-MM-DD
+                try:
+                    date_parts = shift_date.split("-")
+                    shift_date_normalized = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
+                    
+                    # Check if shift is within date range
+                    if start_date and shift_date_normalized < start_date:
+                        continue
+                    if end_date and shift_date_normalized > end_date:
+                        continue
+                    
+                    filtered_shifts.append(shift)
+                except Exception as e:
+                    logger.warning(f"Error parsing shift date {shift_date}: {e}")
+                    continue
+            
+            logger.info(f"After date filtering: {len(filtered_shifts)} shifts remaining")
+            shifts = filtered_shifts
         
         logger.info(f"Found {len(shifts)} shifts for {staff_name}")
         return shifts

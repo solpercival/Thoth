@@ -1,218 +1,414 @@
-# Automated Website Login System - LLM Core Integration
+# Automation Module: Staff Lookup & Shift Scraping
 
-This module provides automated website login functionality as part of the Thoth LLM core pipeline. It receives credentials reasoned out by the LLM from transcribed calls, performs the login, and returns scraped content for further LLM processing.
+This module provides automated website interaction for the Thoth system, enabling staff lookup by phone number, shift searching by staff name, and intelligent date reasoning using LLM. It integrates with Ezaango and other websites for 2FA-aware login and content scraping.
+
+**📖 See [WORKFLOW.md](WORKFLOW.md) for detailed data flow and module connections**
 
 ## Architecture
 
+### Core Flow: Staff Lookup → Date Reasoning → Shift Filtering
+
 ```
-┌─────────────────────────────────┐
-│ Voice Call Transcription        │
-│ (Audio → Text)                  │
-└────────────────┬────────────────┘
-                 │
-┌────────────────▼────────────────┐
-│ LLM Core Reasoning              │
-│ (Extract credentials, actions)  │
-└────────────────┬────────────────┘
-                 │ llm_reasoning_output
-                 │ {
-                 │   "service_name": "...",
-                 │   "credentials": {...},
-                 │   "action": "login_and_scrape"
-                 │ }
-                 │
-┌────────────────▼────────────────┐
-│ Login Automation (This Module)  │
-│ (Selenium-based login)          │
-└────────────────┬────────────────┘
-                 │ scraped_content
-                 │
-┌────────────────▼────────────────┐
-│ Web Scraper                     │
-│ (Extract relevant data)         │
-└────────────────┬────────────────┘
-                 │
-┌────────────────▼────────────────┐
-│ LLM Phrase Processing           │
-│ (Format for TTS)                │
-└────────────────┬────────────────┘
-                 │
-┌────────────────▼────────────────┐
-│ Text-to-Speech                  │
-│ (Return audio to call)          │
-└─────────────────────────────────┘
+User calls with phone number + transcript
+    ↓
+[1] lookup_staff_by_phone (staff_lookup.py)
+    ├─→ Navigate to Ezaango /staff/4 page
+    ├─→ Search by phone number
+    ├─→ Extract staff details (name, id, email, team, mobile)
+    └─→ Remove titles from name (Ms, Mr, Dr, etc.)
+    ↓
+[2] reason_dates (shift_date_reasoner.py)
+    ├─→ Pass user transcript to LLM (Ollama)
+    ├─→ LLM interprets date query (tomorrow, next week, etc.)
+    ├─→ Output: start_date, end_date, reasoning
+    └─→ Return structured date range
+    ↓
+[3] search_staff_shifts_by_name (staff_lookup.py)
+    ├─→ Navigate to Ezaango /search?keyword=staff+name
+    ├─→ Parse shift table results
+    ├─→ Filter shifts within date range
+    ├─→ Extract: client, type, date, time, shift_id
+    └─→ Return list of relevant shifts
+    ↓
+[4] Return to CallAssistant for TTS/response
+```
+
+### Module Dependencies
+
+```
+├── login_playwright.py          (Browser automation, 2FA login)
+├── website_configs_playwright.py (Ezaango selectors)
+├── staff_lookup.py               (Staff/Shift lookup)
+│   ├── lookup_staff_by_phone()   - Find staff by phone
+│   ├── search_staff_shifts_by_name() - Find shifts by name
+│   └── _remove_title()           - Clean staff names
+├── shift_date_reasoner.py        (LLM-based date interpretation)
+│   └── ShiftDateReasoner.reason_dates() - Ask LLM about dates
+├── secrets.py                    (Credential management)
+├── notifier.py                   (Email/log notifications)
+├── check_shifts_handler.py       (Orchestrator)
+└── test_automation.py            (Consolidated test suite)
 ```
 
 ## Features
 
-✅ **LLM Integration** - Receives LLM-reasoned credentials directly
-✅ **Automated Website Login** - Selenium-based form filling and submission
-✅ **Content Scraping** - Extracts page content after login for LLM processing
-✅ **Retry Logic** - Automatic retry on failure with configurable attempts
-✅ **Website Configuration** - Easy configuration for different websites
-✅ **Logging & Debugging** - Comprehensive logging and screenshot capture
-✅ **Docker Support** - Easy deployment with Docker Compose
-✅ **Error Handling** - Graceful error handling with detailed error messages
+✅ **Staff Lookup** - Find employees by phone number with automatic title removal
+✅ **Shift Search** - Find all shifts for a staff member with date parsing
+✅ **LLM Date Reasoning** - Use local Ollama to interpret date queries intelligently  
+✅ **2FA Support** - Automatic TOTP code generation for 2FA login
+✅ **Session Persistence** - Save browser sessions across runs
+✅ **Headless Mode** - Run browser automation without GUI
+✅ **Flexible Testing** - Consolidated test suite with CLI arguments
+✅ **Error Handling** - Comprehensive logging and error recovery
 
 ## Components
 
-### 1. Login Automation (`automation/login.py`)
-Core automation library with:
-- **LoginAutomation**: Main orchestrator receiving LLM credentials
-- **WebsiteAutoLogin**: Selenium WebDriver wrapper
-- **Credentials**: Dataclass with `from_llm_output()` method for LLM integration
+### 1. **staff_lookup.py** - Staff & Shift Search
+Main module for finding employees and their shifts.
 
-### 2. Website Configurations (`automation/website_configs.py`)
-Pre-configured settings for popular websites and templates for custom sites.
+**Key Functions:**
+- `_remove_title(full_name)` - Remove Ms/Mr/Dr/Prof from names
+- `lookup_staff_by_phone(page, phone_number)` - Find staff by phone on /staff/4
+  - Returns: id, full_name, email, team, mobile, address, status
+- `search_staff_shifts_by_name(page, staff_name)` - Find shifts by name on /search
+  - Returns: List of shifts with client, type, date, time, shift_id
 
-### 3. Integration Example (`automation/example_usage.py`)
-- `login_from_llm_reasoning()`: Direct LLM credential integration
-- `llm_integration_pipeline()`: Full pipeline entry point
-- Shows how LLM reasoning output flows through the system
+**Usage:**
+```python
+staff = await lookup_staff_by_phone(page, "0431256441")
+shifts = await search_staff_shifts_by_name(page, staff['full_name'])
+```
 
-### 4. Updated Dockerfiles
-- `Dockerfile.automation`: Standalone automation container
-- Integrated with LLM core pipeline
+### 2. **shift_date_reasoner.py** - LLM Date Interpretation
+Uses local Ollama to intelligently determine date ranges from user queries.
+
+**Key Class:**
+- `ShiftDateReasoner` - Reasons dates from transcripts
+  - `reason_dates(user_query)` - "When is my shift tomorrow?" → {"start_date": "2025-12-16", "end_date": "2025-12-16", ...}
+  - Uses Ollama with gemma3:1b model
+  - Returns structured JSON with date range and reasoning
+
+**Usage:**
+```python
+reasoner = ShiftDateReasoner(model="gemma3:1b")
+result = reasoner.reason_dates("Hi I would like to cancel my shift tomorrow")
+# Returns: is_shift_query=True, start_date=2025-12-16, end_date=2025-12-16
+```
+
+### 3. **login_playwright.py** - Browser Automation & 2FA Login
+Handles website login with automated 2FA code generation.
+
+**Key Classes:**
+- `LoginAutomation` - Main login orchestrator
+  - `login_with_retry(page, credentials, max_attempts)` - Login with TOTP
+  - `open_page(headless)` - Open browser context with optional saved session
+- `WebsiteConfig` - Configuration for website selectors
+
+**Features:**
+- Session persistence (saves cookies to `.sessions/`)
+- Automatic TOTP code generation from secrets
+- Headless mode support
+- Retry logic with exponential backoff
+
+### 4. **website_configs_playwright.py** - Website Selectors
+Pre-configured selectors for Ezaango and other websites.
+
+**Configuration:**
+```python
+HAHS_VIC3495_CONFIG = {
+    'url': 'https://hahs-vic3495.ezaango.app/login',
+    'username_selector': "input[id='email'][type='email']",
+    'password_selector': "input[id='password'][type='password']",
+    'submit_selector': "button[type='submit']",
+    '2fa_selector': "input[id='one_time_password']",
+    ...
+}
+```
+
+### 5. **check_shifts_handler.py** - Orchestrator
+Main entry point combining all components.
+
+**Key Function:**
+- `check_shifts_and_notify(service_name, notify_method)` - Orchestrates entire flow
+  - Logins, scrapes, filters, and notifies
+
+### 6. **notifier.py** - Email/Log Notifications
+Sends notifications about found shifts.
+
+**Key Function:**
+- `notify_coordinator(contact_email, shifts, method)` - Send notifications
+  - Methods: "log" (to console), "email" (via SMTP)
+
+### 7. **secrets.py** - Credential Management
+Manages credentials from environment variables, .env, or defaults.
+
+**Key Function:**
+- `get_admin_credentials(service_name)` - Get credentials
+- `get_admin_totp_code(service_name)` - Generate TOTP code
+
+### 8. **test_automation.py** - Consolidated Test Suite
+Unified test runner for all automation functions.
+
+**Usage:**
+```bash
+python test_automation.py --staff-by-phone "0431256441"
+python test_automation.py --shifts-by-name "Alannah Courtnay"
+```
 
 ## Installation
 
 ### Prerequisites
 - Python 3.8+
-- Docker & Docker Compose (for containerized setup)
-- Chrome/Chromium browser (for local testing)
-- ChromeDriver (for local testing)
+- Playwright browser drivers
+- Ollama (for local LLM, models: gemma3:1b or higher)
+- Docker (optional)
 
 ### Local Setup
 
 ```bash
 cd backend
 
-# Create virtual environment
+# Create and activate virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install selenium
+pip install playwright pyotp
+
+# Download Playwright browsers
+playwright install
+
+# Start Ollama (if using local)
+ollama serve
+
+# In another terminal, pull model
+ollama pull gemma3:1b
 ```
 
-### Docker Setup
+### Environment Setup
 
+Create `.env` in workspace root:
 ```bash
-# Build and run with Docker Compose
-docker-compose -f docker-compose.automation.yml up --build
+# Admin credentials
+ADMIN_USERNAME_HAHS_VIC3495="admin@example.com"
+ADMIN_PASSWORD_HAHS_VIC3495="your_password"
+TOTP_SECRET_HAHS_VIC3495="your_totp_secret_here"
+
+# SMTP (optional, for email notifications)
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="587"
+SMTP_USER="your_email@gmail.com"
+SMTP_PASS="your_app_password"
 ```
 
 ## Configuration
 
-### Environment Variables
+### Website Selectors
 
-```bash
-# Login Automation
-HEADLESS=true          # Run browser headless (true/false)
-PYTHONUNBUFFERED=1     # Real-time logging
-```
-
-### Website Configuration Example
+For a new website, update `website_configs_playwright.py`:
 
 ```python
-from automation.login import WebsiteConfig, LoginStrategy
-
-config = WebsiteConfig(
-    url="https://example.com/login",
-    strategy=LoginStrategy.STANDARD,
-    username_selector="input[name='username']",
-    password_selector="input[name='password']",
-    submit_selector="button[type='submit']",
-    expected_url_after_login="https://example.com/dashboard",
-    wait_timeout=10,
-)
+NEW_SITE_CONFIG = {
+    'url': 'https://new-site.com/login',
+    'username_selector': "input[name='username']",
+    'password_selector': "input[name='password']",
+    'submit_selector': "button[type='submit']",
+    'totp_selector': "input[id='otp']",  # Optional
+    'expected_url_after_login': 'https://new-site.com/dashboard',
+    'wait_timeout': 10
+}
 ```
 
-To find correct CSS selectors:
+**Finding Selectors:**
 1. Open website in browser
-2. Right-click on login form elements
+2. Right-click login form elements
 3. Select "Inspect" to view HTML
-4. Copy the CSS selector or use `name`, `id`, or `class` attributes
+4. Copy CSS selector or use `id`, `name`, `class`, `data-testid` attributes
+
+### LLM Model Selection
+
+Change model in `shift_date_reasoner.py`:
+```python
+reasoner = ShiftDateReasoner(model="gemma3:270m")  # Larger model
+# or
+reasoner = ShiftDateReasoner(model="llama2")       # Different model
+```
+
+### Headless Mode
+
+Control browser visibility:
+```python
+# Headless (no browser window)
+async with await login_automation.open_page(headless=True) as page:
+    ...
+
+# Visible (useful for debugging)
+async with await login_automation.open_page(headless=False) as page:
+    ...
+```
 
 ## Usage Examples
 
-### Example 1: LLM Core Integration
+### Example 1: Staff Lookup by Phone
 
-```python
-from automation.example_usage import llm_integration_pipeline
-
-# LLM reasoning output (from core LLM processing)
-llm_reasoning = {
-    "service_name": "github",
-    "credentials": {
-        "username": "my_username",
-        "password": "my_token",
-        "email": "user@example.com",
-        "extra_fields": {}
-    },
-    "action": "login_and_scrape"
-}
-
-# Execute login and scraping
-result = llm_integration_pipeline(
-    transcribed_call="Login to github and check my repositories",
-    llm_reasoning_output=llm_reasoning
-)
-
-if result['success']:
-    # Pass scraped content to web scraper component
-    page_content = result['scraped_content']
-    # ... further processing by web scraper
+```bash
+# Using test_automation.py
+python test_automation.py --staff-by-phone "0431256441"
 ```
 
-### Example 2: Direct LLM Credentials Usage
-
+Or programmatically:
 ```python
-from automation.login import LoginAutomation, Credentials
-from automation.website_configs import get_config
+from staff_lookup import lookup_staff_by_phone
+from login_playwright import LoginAutomation
+from website_configs_playwright import get_config
+from secrets import get_admin_credentials, get_admin_totp_code
 
-# LLM-reasoned credentials
-llm_creds = {
-    "username": "user",
-    "password": "pass",
-    "email": "user@example.com",
-    "extra_fields": {}
-}
-
-config = get_config("github")
-
-with LoginAutomation(headless=True) as automation:
-    success = automation.login_with_retry(
-        config=config,
-        llm_credentials=llm_creds,
-    )
+async def lookup_staff():
+    config = get_config("hahs_vic3495")
+    login = LoginAutomation(config)
     
-    if success:
-        content = automation.scrape_page_content()
-        print(f"Scraped {len(content)} characters")
+    creds = get_admin_credentials("hahs_vic3495")
+    creds['two_fa_code'] = get_admin_totp_code("hahs_vic3495")
+    
+    async with await login.open_page(headless=True) as page:
+        await login.login_with_retry(page, creds)
+        staff = await lookup_staff_by_phone(page, "0431256441")
+        print(f"Found: {staff['full_name']}")
 ```
 
-### Example 3: With Extra Fields (2FA, Security Questions)
+### Example 2: Search Shifts by Staff Name
+
+```bash
+# Using test_automation.py
+python test_automation.py --shifts-by-name "Alannah Courtnay"
+```
+
+Or programmatically:
+```python
+from staff_lookup import search_staff_shifts_by_name
+
+shifts = await search_staff_shifts_by_name(page, "Alannah Courtnay")
+print(f"Found {len(shifts)} shifts")
+for shift in shifts[:3]:
+    print(f"  {shift['client_name']} on {shift['date']} at {shift['time']}")
+```
+
+### Example 3: LLM Date Reasoning
 
 ```python
-llm_reasoning = {
-    "service_name": "secure_service",
-    "credentials": {
-        "username": "user",
-        "password": "pass",
-        "extra_fields": {
-            "security_answer": "my_security_answer",
-            "2fa_code": "123456"
-        }
-    }
-}
+from shift_date_reasoner import ShiftDateReasoner
 
-# The LLM should extract these extra fields from the transcribed call
-result = llm_integration_pipeline(
-    transcribed_call="Login and answer the security question about my pet",
-    llm_reasoning_output=llm_reasoning
-)
+reasoner = ShiftDateReasoner(model="gemma3:1b")
+result = reasoner.reason_dates("Hi I would like to cancel my shift tomorrow")
+
+print(f"Is Shift Query: {result['is_shift_query']}")
+print(f"Start Date: {result['start_date']}")
+print(f"End Date: {result['end_date']}")
+print(f"Search Query: {reasoner.format_search_query(result)}")
+```
+
+Output:
+```
+Is Shift Query: True
+Start Date: 2025-12-16
+End Date: 2025-12-16
+Search Query: from=2025-12-16&to=2025-12-16
+```
+
+### Example 4: Complete Integration Workflow ✅ NOW IMPLEMENTED
+
+Complete end-to-end workflow combining all components:
+
+```bash
+# Run the comprehensive integration test
+python test_integrated_workflow.py --phone "0431256441" --transcript "Hi I would like to cancel my shift tomorrow"
+```
+
+Programmatically:
+```python
+from staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+from shift_date_reasoner import ShiftDateReasoner
+from login_playwright import LoginAutomation
+from website_configs_playwright import get_config
+from secrets import get_admin_credentials, get_admin_totp_code
+
+async def get_staff_shifts_for_dates(phone_number, transcript):
+    """
+    Complete workflow: phone → staff → dates → filtered shifts
+    
+    Args:
+        phone_number: User's phone number (e.g., "0431256441")
+        transcript: User's spoken request (e.g., "cancel my shift tomorrow")
+    
+    Returns:
+        dict with staff info, reasoned dates, and filtered shifts
+    """
+    
+    # Get credentials and config
+    config = get_config("hahs_vic3495")
+    admin_creds = get_admin_credentials("hahs_vic3495")
+    admin_creds["two_fa_code"] = get_admin_totp_code("hahs_vic3495")
+    
+    # Perform complete workflow within logged-in session
+    async with LoginAutomation(headless=False, use_saved_session=False) as auto:
+        # Step 1: Login with 2FA
+        success = await auto.login_with_retry(
+            config=config,
+            service_name="hahs_vic3495_admin",
+            llm_credentials=admin_creds
+        )
+        if not success:
+            return None
+        
+        page = await auto.get_page()
+        
+        # Step 2: Lookup staff by phone
+        staff = await lookup_staff_by_phone(page, phone_number)
+        if not staff:
+            return None
+        
+        # Step 3: Reason dates from user transcript
+        reasoner = ShiftDateReasoner(model="gemma3:1b")
+        date_info = reasoner.reason_dates(transcript)
+        
+        # Step 4: Search shifts by staff name
+        all_shifts = await search_staff_shifts_by_name(page, staff['full_name'])
+        
+        # Step 5: Filter shifts by reasoned date range
+        start_date = date_info['start_date']
+        end_date = date_info['end_date']
+        filtered_shifts = [
+            s for s in all_shifts
+            if s['date'] is not None and start_date <= s['date'] <= end_date
+        ]
+        
+        return {
+            'staff': staff,
+            'date_info': date_info,
+            'all_shifts': all_shifts,
+            'filtered_shifts': filtered_shifts
+        }
+```
+
+**Example Output:**
+```
+Phone: 0431256441
+User Query: "Hi I would like to cancel my shift tomorrow"
+
+✓ Staff Found: Alannah Courtnay (ID: 1906)
+✓ LLM Interpreted: tomorrow → 2025-12-16
+✓ Total Shifts Found: 97
+✓ Shifts on 2025-12-16: 0 (no shifts scheduled that day)
+```
+
+**Key Features:**
+- Automatically logs in with 2FA (TOTP code generation)
+- Waits for navigation to complete before proceeding
+- Handles session persistence (disabled in tests for fresh login)
+- Filters malformed shifts (None dates)
+- Returns structured data for further processing
+    }
 ```
 
 ## Docker Compose Usage
@@ -243,138 +439,163 @@ docker-compose -f docker-compose.automation.yml logs -f
 docker-compose -f docker-compose.automation.yml logs -f login-automation
 ```
 
-## Debugging
+## Testing & Debugging
 
-### Take Screenshots
+### Running Tests
 
-```python
-automation.take_screenshot("debug.png")
+```bash
+# Individual component tests
+python test_automation.py --staff-by-phone "0431256441"
+python test_automation.py --shifts-by-name "Alannah Courtnay"
+
+# Complete integration test (all components together)
+python test_integrated_workflow.py --phone "0431256441" --transcript "Hi I would like to cancel my shift tomorrow"
+
+# Show help
+python test_automation.py --help
+python test_integrated_workflow.py --help
 ```
 
-### View Page Source
+### Integration Test Output
 
-```python
-source = automation.auto_login.get_page_source()
-print(source)
+The integration test runs the complete workflow and produces detailed output:
+
+```
+======================================================================
+COMPREHENSIVE INTEGRATION TEST
+======================================================================
+Phone Number: 0431256441
+User Transcript: Hi I would like to cancel my shift tomorrow
+======================================================================
+
+[STEP 1] Logging into Ezaango...
+[+] Generated TOTP code: 775283
+
+[STEP 2] Authenticating...
+[*] Browser window will now open - you can watch the automation
+✓ Login successful! Current URL: https://hahs-vic3495.ezaango.app/home
+
+[STEP 3] Looking up staff by phone...
+[+] FOUND Staff:
+    Name: Alannah Courtnay
+    ID: 1906
+    Email: larnsie9@gmail.com
+    Team: VIC Team
+    Mobile: 0431256441
+
+[STEP 4] Reasoning dates from transcript...
+[+] LLM Analysis:
+    Is Shift Query: True
+    Date Range Type: tomorrow
+    Start Date: 2025-12-16
+    End Date: 2025-12-16
+
+[STEP 5] Searching for shifts and filtering by date range...
+[+] Found 97 total shifts
+[+] Filtered to 0 shifts in date range (2025-12-16 to 2025-12-16)
+
+======================================================================
+INTEGRATION TEST RESULTS
+======================================================================
+✓ Staff Found: Alannah Courtnay (ID: 1906)
+✓ Date Range Reasoned: 2025-12-16 to 2025-12-16
+✓ Total Shifts: 97
+✓ Shifts in Date Range: 0
+======================================================================
 ```
 
-### Enable Debug Logging
+### Debugging Browser Issues
 
+```python
+# Run with visible browser (not headless)
+async with LoginAutomation(headless=False) as auto:
+    # Browser window will show what's happening in real-time
+    await auto.login_with_retry(config, service_name, creds)
+```
+
+### Logging
+
+Enable debug logging:
 ```python
 import logging
-logging.getLogger().setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 ```
 
 ### Common Issues
 
 | Issue | Solution |
 |-------|----------|
-| "Element not found" | Check CSS selectors match website HTML structure |
-| Login fails | Verify LLM extracted correct credentials from transcription |
-| Timeout errors | Increase `wait_timeout` in WebsiteConfig |
-| "Chrome not found" | Install Chrome/Chromium or use headless=False for system browser |
-| 2FA fails | Ensure LLM extracts 2FA code and includes in extra_fields |
+| "Ollama not running" | Run `ollama serve` in another terminal |
+| "Connection refused" | Check Ollama is running on localhost:11434 |
+| "Model not found" | Run `ollama pull gemma3:1b` |
+| "Login fails" | Check credentials in .env file |
+| "TOTP code invalid" | Run `python test_totp_generator.py` to verify codes are generating |
+| "Staff not found" | Check phone format (with/without leading 0) |
+| "Playwright not installed" | Run `pip install playwright` then `playwright install` |
+| "Page navigation timeout" | Website server may be slow; check internet connection |
 
-## LLM Core Integration Points
+## File Structure
 
-### Input to Login Automation
-
-The LLM core passes a dictionary with this structure:
-
-```python
-{
-    "service_name": str,           # Name of service to login to
-    "credentials": {
-        "username": str,           # Extracted username
-        "password": str,           # Extracted password
-        "email": str,              # Optional email
-        "extra_fields": {          # Optional 2FA codes, security answers, etc
-            "field_name": str
-        }
-    },
-    "action": "login_and_scrape"  # Action type
-}
+```
+backend/automation/
+├── staff_lookup.py                 # Staff & shift lookup functions
+├── shift_date_reasoner.py          # LLM date interpretation
+├── login_playwright.py             # Browser automation & 2FA
+├── website_configs_playwright.py   # Website selectors
+├── check_shifts_handler.py         # Orchestrator
+├── notifier.py                     # Email/log notifications
+├── secrets.py                      # Credential management
+├── test_automation.py              # Unified test suite
+├── credentials_api.py              # Credential API client
+├── data_processing.py              # Data processing utilities
+├── .sessions/                      # Saved browser sessions (gitignored)
+├── README.md                       # This file
+└── __pycache__/                    # Python cache (gitignored)
 ```
 
-### Output from Login Automation
+## Security
 
-Returns to LLM core:
+### Credential Management
+- Credentials stored in `.env` (gitignored, local only)
+- Environment variables take priority over .env
+- TOTP secrets never logged to console
+- Session cookies stored in `.sessions/` (gitignored)
 
-```python
-{
-    "success": bool,                    # Login successful?
-    "scraped_content": str,             # Page HTML/content
-    "message": str,                     # Success message
-    "error": str                        # Error message if failed
-}
-```
+### Browser Isolation
+- Run in headless mode for reduced attack surface
+- Use containers for better isolation in production
+- Clear sessions after use with `await login.context.close()`
 
-## Integration with Other Components
-
-### Connection with Web Scraper
-After successful login, `scraped_content` is passed to the web scraper component for data extraction.
-
-### Connection with LLM Phrase Processing
-Web scraper output is passed to LLM for formatting as natural language for TTS.
-
-### Connection with Text-to-Speech
-Formatted text is converted to audio and returned to the call.
-
-## Security Considerations
-
-⚠️ **Important Security Notes:**
-
-1. **Never Log Credentials**: System logs credentials only for debugging, use secure logging in production
-2. **Secure Credential Handling**: LLM should only pass credentials internally, not via external APIs
-3. **HTTPS for External Sites**: Ensure target websites use HTTPS
-4. **Browser Isolation**: Use Docker/containers to isolate browser instances
-5. **Temporary Data**: Clean up screenshots and temporary files after use
+### Data Privacy
+- Don't log raw page HTML
+- Sanitize error messages before returning
+- Use HTTPS for all external requests
 
 ## Performance Tips
 
-- Use headless mode for faster execution
-- Adjust `wait_timeout` based on network speed
-- Cache website configurations for frequently accessed sites
-- Parallelize multiple logins if needed (separate containers)
+- Use `headless=True` for faster execution
+- Adjust `wait_timeout` in configs based on network speed
+- Cache website configs for frequently accessed sites
+- Run tests serially if Ezaango rate-limits concurrent requests
 
-## Troubleshooting
+## Next Steps / To-Do
 
-### Logs Location
-- Local: Check console output
-- Docker: `docker-compose logs -f login-automation`
+- [ ] Create unified integration function (phone + transcript → shifts)
+- [ ] Add shift filtering by date range in staff_lookup.py
+- [ ] Integrate with Flask app for API endpoint
+- [ ] Add email notifications for shift changes
+- [ ] Create Docker container for automated runs
+- [ ] Add Redis queue for background job processing
 
-### Common Selectors
-```python
-# By CSS class
-"input.username"
+## Docker Setup (Optional)
 
-# By ID
-"input#password"
+```bash
+# Build automation container
+docker build -f Dockerfile.automation -t thoth-automation .
 
-# By attribute
-"input[data-testid='login-username']"
+# Run with Docker Compose
+docker-compose -f docker-compose.automation.yml up --build
 
-# XPath
-"//input[@name='username']"
+# View logs
+docker-compose -f docker-compose.automation.yml logs -f
 ```
-
-## Contributing
-
-To add support for a new website:
-
-1. Add configuration to `website_configs.py`
-2. Update `WEBSITE_CONFIGS` dictionary
-3. Test with example LLM reasoning output
-4. Document custom selectors
-
-## License
-
-[Add your license here]
-
-## Support
-
-For issues or questions:
-1. Check the troubleshooting section
-2. Review logs for error messages
-3. Test selectors manually in browser DevTools
-4. Verify LLM is extracting credentials correctly
