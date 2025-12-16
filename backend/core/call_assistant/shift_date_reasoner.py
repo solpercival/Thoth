@@ -56,6 +56,7 @@ Used By:
 """
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 from backend.core.call_assistant.llm_client import OllamaClient
@@ -97,11 +98,41 @@ This Sunday is: {this_sunday}
 Today's date: {today} ({day_of_week})
 """
 
-    def __init__(self, model: str = "llama2"):
-        """Initialize the LLM client for date reasoning."""
-        self.today = datetime.now()
+    def __init__(self, model: str = "llama2", override_today: Optional[str] = None):
+        """
+        Initialize the LLM client for date reasoning.
+        
+        Args:
+            model: LLM model to use (default: llama2)
+            override_today: Optional YYYY-MM-DD date string to use instead of actual today
+                           (useful for testing on different machines with different system dates)
+                           Can also be set via SHIFT_REASONER_TODAY environment variable
+        """
+        # Allow overriding today's date for testing via environment variable
+        import os
+        env_override = os.getenv('SHIFT_REASONER_TODAY')
+        
+        if env_override:
+            try:
+                self.today = datetime.strptime(env_override, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+                logger.info(f"Using override date from env: {self.today.strftime('%Y-%m-%d')}")
+            except ValueError:
+                logger.warning(f"Invalid SHIFT_REASONER_TODAY format: {env_override}. Expected YYYY-MM-DD")
+                self.today = datetime.now()
+        elif override_today:
+            try:
+                self.today = datetime.strptime(override_today, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+                logger.info(f"Using override date from parameter: {self.today.strftime('%Y-%m-%d')}")
+            except ValueError:
+                logger.warning(f"Invalid override_today format: {override_today}. Expected YYYY-MM-DD")
+                self.today = datetime.now()
+        else:
+            self.today = datetime.now()
+        
         today_str = self.today.strftime("%Y-%m-%d")
         day_of_week = self.today.strftime("%A")  # e.g., "Tuesday"
+        
+        logger.info(f"ShiftDateReasoner initialized - Today: {today_str} ({day_of_week})")
         
         # Calculate this Sunday (end of current week)
         # Monday=0, Sunday=6 in weekday()
@@ -116,6 +147,8 @@ Today's date: {today} ({day_of_week})
         self.this_sunday = sunday_date
         sunday_str = sunday_date.strftime("%Y-%m-%d")
         sunday_dd_mm_yyyy = sunday_date.strftime("%d-%m-%Y")
+        
+        logger.debug(f"This Sunday: {sunday_dd_mm_yyyy}")
         
         system_prompt = self.SYSTEM_PROMPT_TEMPLATE.format(
             today=today_str, 
@@ -146,6 +179,7 @@ Today's date: {today} ({day_of_week})
         """
         try:
             logger.info(f"Reasoning dates for query: {user_query}")
+            logger.debug(f"LLM context - Today: {self.today.strftime('%Y-%m-%d')}, This Sunday: {self.this_sunday.strftime('%Y-%m-%d')}")
             
             response = self.llm_client.ask_llm(user_query)
             logger.debug(f"LLM response: {response}")
@@ -155,16 +189,25 @@ Today's date: {today} ({day_of_week})
             end_idx = response.rfind('}') + 1
             
             if start_idx == -1 or end_idx == 0:
-                logger.error(f"No JSON found in response: {response}")
+                logger.error(f"No JSON found in LLM response. Response was: {response}")
+                logger.warning("Falling back to default dates (next 7 days)")
                 return self._default_dates()
             
             json_str = response[start_idx:end_idx]
-            date_info = json.loads(json_str)
+            try:
+                date_info = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON from LLM: {json_str[:200]}")
+                logger.error(f"JSON error: {e}")
+                logger.warning("Falling back to default dates (next 7 days)")
+                return self._default_dates()
             
             # Validate response has required fields
             required_fields = ["is_shift_query", "date_range_type", "start_date", "end_date"]
             if not all(field in date_info for field in required_fields):
-                logger.warning(f"Missing fields in response: {date_info}")
+                missing = [f for f in required_fields if f not in date_info]
+                logger.warning(f"Missing required fields in response: {missing}. Got: {date_info}")
+                logger.warning("Falling back to default dates (next 7 days)")
                 return self._default_dates()
             
             # Normalize dates to DD-MM-YYYY format regardless of LLM output format
@@ -199,9 +242,12 @@ Today's date: {today} ({day_of_week})
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
+            logger.warning("Falling back to default dates (next 7 days)")
             return self._default_dates()
         except Exception as e:
             logger.error(f"Error reasoning dates: {e}")
+            logger.exception("Full traceback:")  # Log full exception with traceback
+            logger.warning("Falling back to default dates (next 7 days)")
             return self._default_dates()
     
     def _default_dates(self) -> dict:
