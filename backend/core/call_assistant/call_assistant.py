@@ -139,7 +139,7 @@ class CallAssistant:
 
             result:dict = asyncio.run(test_integrated_workflow(self.caller_phone, self.transcript))
             print("===RESULTS===")
-            print(result)
+            print(result['all_shifts'])
 
             # Switch the system prompt to formating now
             #self.llm_client.set_system_prompt(FORMAT_SYSTEM_PROMPT)
