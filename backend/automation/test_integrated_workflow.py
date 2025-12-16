@@ -174,7 +174,7 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             
             # STEP 4: Date Reasoning (LLM - no page needed)
             print("\n[STEP 4] Reasoning dates from transcript...")
-            reasoner = ShiftDateReasoner(model="gemma3:1b")
+            reasoner = ShiftDateReasoner(model="llama2")
             print(f"[*] Asking LLM: \"{transcript}\"")
             
             date_info = reasoner.reason_dates(transcript)
@@ -227,6 +227,7 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
                 return {
                     'staff': staff,
                     'dates': date_info,
+                    'reasoning': date_info.get('reasoning', 'Unknown'),
                     'all_shifts': [],
                     'filtered_shifts': []
                 }
@@ -272,6 +273,7 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             return {
                 'staff': staff,
                 'dates': date_info,
+                'reasoning': date_info.get('reasoning', 'Unknown'),
                 'all_shifts': all_shifts,
                 'filtered_shifts': filtered_shifts
             }
