@@ -191,6 +191,10 @@ Today's date: {today} ({day_of_week})
                     date_info['end_date'] = sunday_str
             
             logger.info(f"Determined dates: {date_info['start_date']} to {date_info['end_date']}")
+            
+            # Clear conversation history for next reasoning to avoid contamination
+            self.llm_client.clear_history(keep_system_prompt=True)
+            
             return date_info
             
         except json.JSONDecodeError as e:
@@ -212,6 +216,11 @@ Today's date: {today} ({day_of_week})
             "end_date": end.strftime("%d-%m-%Y"),
             "reasoning": "Default: next 7 days"
         }
+    
+    def clear_history(self) -> None:
+        """Clear the LLM conversation history while keeping the system prompt."""
+        self.llm_client.clear_history(keep_system_prompt=True)
+        logger.info("Cleared LLM conversation history")
     
     def format_search_query(self, date_info: dict) -> str:
         """

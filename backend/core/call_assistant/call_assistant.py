@@ -127,39 +127,69 @@ class CallAssistant:
         Return:
             script to be passed into tts
         """
+        import json
+        
         if "<SHIFT>" in intent_tag and self.caller_phone:
             print(f"[ROUTING] Shift check request for {self.caller_phone}")
-            # Would trigger shift checking here (async integration)
-            #{
-            #    'staff': staff,
-            #    'dates': date_info,
-            #    'all_shifts': all_shifts,
-            #    'filtered_shifts': filtered_shifts
-            #}
-
+            
             result:dict = asyncio.run(test_integrated_workflow(self.caller_phone, self.transcript))
             print("===RESULTS===")
             print(result)
-
-            # Switch the system prompt to formating now
-            #self.llm_client.set_system_prompt(FORMAT_SYSTEM_PROMPT)
-
-            # Ask LLM to format the replies, to make it TTS friendly
-            #formatted_output:str = self.llm_client.ask_llm(result)
-
-            # For now
-            return 'formatted_output'
+            
+            if result:
+                # Extract the reasoning flag and separate it from the explanation
+                reasoning_str = result.get('reasoning', 'Unknown')
+                intention_flag = '<SHOW>'  # default
+                reasoning_explanation = reasoning_str
+                
+                # Parse the reasoning string to extract flag
+                if '<CNCL>' in reasoning_str:
+                    intention_flag = '<CNCL>'
+                    # Remove the flag from the explanation
+                    reasoning_explanation = reasoning_str.replace('<CNCL>', '').strip()
+                elif '<SHOW>' in reasoning_str:
+                    intention_flag = '<SHOW>'
+                    reasoning_explanation = reasoning_str.replace('<SHOW>', '').strip()
+                
+                # Format response as JSON with separate intention field
+                formatted_response = {
+                    'intention': intention_flag,
+                    'reasoning': reasoning_explanation,
+                    'staff': {
+                        'name': result['staff']['full_name'],
+                        'id': result['staff']['id'],
+                        'email': result['staff']['email']
+                    },
+                    'date_range': {
+                        'start_date': result['dates']['start_date'],
+                        'end_date': result['dates']['end_date'],
+                        'type': result['dates']['date_range_type']
+                    },
+                    'shifts_found': len(result['filtered_shifts']),
+                    'shifts': [
+                        {
+                            'client': shift['client_name'],
+                            'date': shift['date'],
+                            'time': shift['time'],
+                            'shift_id': shift['shift_id']
+                        } for shift in result['filtered_shifts']
+                    ]
+                }
+                
+                print(json.dumps(formatted_response, indent=2))
+                return json.dumps(formatted_response)
+            else:
+                return json.dumps({'error': 'Failed to process shift request'})
         
         elif "<LOGIN>" in intent_tag:
             print(f"[ROUTING] Login assistance requested")
-            # Would trigger login flow here
-            return "Please hold, You will be redirected for live assistance"
+            return json.dumps({'intention': '<LOGIN>', 'message': "Please hold, You will be redirected for live assistance"})
         elif "<REAL>" in intent_tag:
             print(f"[ROUTING] Transfer to real agent")
-            # Would trigger agent transfer here
-            return "Please hold, You will be redirected for live assistance"
+            return json.dumps({'intention': '<REAL>', 'message': "Please hold, You will be redirected for live assistance"})
         else:
             print(f"[ROUTING] Request denied: {intent_tag}")
+            return json.dumps({'intention': '<DENY>', 'message': 'Request cannot be processed'})
 
     def stop(self):
         """Stop the voice assistant"""
