@@ -214,6 +214,125 @@ def normalize_phone(phone: str) -> str:
     return normalized
 
 
+async def search_staff_shifts_by_date(page, search_date: str) -> list:
+    """
+    Filter already-loaded shift results by searching the date in the search input field.
+    
+    Assumes the page is already showing a staff member's shifts.
+    Uses the search input field to filter by date only: 
+    <input type="search" class="form-control form-control-sm" placeholder="" aria-controls="search_table">
+    
+    Args:
+        page: Playwright page object with staff shifts already loaded
+        search_date: Specific date in DD-MM-YYYY format to filter by
+    
+    Returns:
+        List of dicts with shift details for that specific date
+    """
+    try:
+        logger.info(f"Filtering shifts by date: {search_date}")
+        
+        # Find the search input and fill it with just the date
+        search_input = await page.query_selector("input[type='search'].form-control")
+        if not search_input:
+            logger.error("Could not find search input field on page")
+            return []
+        
+        # Clear and fill the search input with just the date
+        await search_input.fill("")
+        await search_input.fill(search_date)
+        logger.info(f"Filled search input with date: {search_date}")
+        
+        # Wait for results to filter
+        await page.wait_for_timeout(2000)
+        
+        # Get page content and parse
+        table_html = await page.content()
+        soup = BeautifulSoup(table_html, "html.parser")
+        
+        # Find all table rows
+        rows = soup.find_all("tr", {"role": "row"})
+        logger.info(f"Found {len(rows)} rows after date filter")
+        
+        shifts = []
+        for row in rows:
+            try:
+                tds = row.find_all("td")
+                if len(tds) < 3:
+                    continue
+                
+                # Extract columns: Type | Staff Name | Client Info
+                shift_type = tds[0].get_text(strip=True)
+                found_staff_name = tds[1].get_text(strip=True)
+                client_info_raw = tds[2].get_text(strip=True)
+                
+                # Extract shift_id from data-href attribute
+                shift_link = row.get("data-href", "")
+                shift_id = shift_link.split("/")[-1] if shift_link else None
+                
+                # Parse client_info: "Client Name on DD-MM-YYYY at HH:MM AM/PM"
+                client_name = None
+                date = None
+                time = None
+                
+                if " on " in client_info_raw and " at " in client_info_raw:
+                    parts = client_info_raw.split(" on ")
+                    client_name = parts[0].strip()
+                    
+                    remainder = parts[1] if len(parts) > 1 else ""
+                    if " at " in remainder:
+                        date_time_split = remainder.split(" at ")
+                        date = date_time_split[0].strip()
+                        time = date_time_split[1].strip() if len(date_time_split) > 1 else None
+                
+                shift_data = {
+                    "type": shift_type,
+                    "staff_name": found_staff_name,
+                    "client_name": client_name,
+                    "date": date,
+                    "time": time,
+                    "client_info": client_info_raw,
+                    "shift_id": shift_id,
+                    "shift_url": shift_link
+                }
+                
+                shifts.append(shift_data)
+                logger.debug(f"Parsed shift: {client_name} on {date} at {time}")
+                
+            except Exception as e:
+                logger.warning(f"Error parsing row: {e}")
+                continue
+        
+        logger.info(f"Found {len(shifts)} shifts for date {search_date}")
+        return shifts
+        
+    except Exception as e:
+        logger.error(f"Error filtering shifts by date: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+def normalize_phone(phone: str) -> str:
+    """
+    Normalize phone number for comparison.
+    Removes: +, -, spaces, leading 0 (for Australian numbers)
+    
+    Examples:
+    - "+61 412 345 678" → "61412345678"
+    - "0412 345 678" → "61412345678" 
+    - "+61412345678" → "61412345678"
+    """
+    # Remove +, -, spaces
+    normalized = phone.replace("+", "").replace("-", "").replace(" ", "")
+    
+    # Convert leading 0 to 61 (Australian numbers)
+    if normalized.startswith("0"):
+        normalized = "61" + normalized[1:]
+    
+    return normalized
+
+
 def phones_match(phone1: str, phone2: str) -> bool:
     """
     Check if two phone numbers match (handles various formats).

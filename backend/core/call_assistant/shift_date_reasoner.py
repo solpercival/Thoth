@@ -29,8 +29,8 @@ Main Function:
         Output: {
             "is_shift_query": True,
             "date_range_type": "tomorrow",
-            "start_date": "2025-12-16",
-            "end_date": "2025-12-16",
+            "start_date": "17-12-2025",
+            "end_date": "17-12-2025",
             "reasoning": "Cancellation of shift tomorrow."
         }
 
@@ -77,29 +77,51 @@ TASK: Given a user's query about their shifts, output ONLY a JSON object (no oth
 {{
     "is_shift_query": true/false,
     "date_range_type": "today" | "tomorrow" | "week" | "month" | "specific",
-    "start_date": "YYYY-MM-DD",
-    "end_date": "YYYY-MM-DD",
-    "reasoning": Either <CNCL> if the client wants to cancel or <SHOW> if the client wants to know their shift + "brief explanation"
+    "start_date": "DD-MM-YYYY",
+    "end_date": "DD-MM-YYYY",
+    "reasoning": "<CNCL>" if cancellation, "<SHOW>" if viewing shifts, followed by brief explanation
 }}
 
 DATE INTERPRETATION RULES:
 - "When is my shift?" or "What shifts do I have?" → today + next 7 days
 - "Tomorrow" → tomorrow only
 - "Next week" → 7 days from today
-- "This week" → until end of week (Sunday)
+- "This week" → from TODAY until {this_sunday}
 - "Next month" → entire next calendar month
 - Specific date mentioned → that date only
 - Default (no date mentioned) → today + next 7 days
 
-IMPORTANT: Always use today's date as reference. Output ONLY the JSON object, no explanation.
+IMPORTANT: Always use today's date as reference. Output ONLY the JSON object, no explanation. 
+This Sunday is: {this_sunday}
 
-Today's date: {today}
+Today's date: {today} ({day_of_week})
 """
 
-    def __init__(self, model: str = "gemma3:1b"):
+    def __init__(self, model: str = "llama2"):
         """Initialize the LLM client for date reasoning."""
-        today = datetime.now().strftime("%Y-%m-%d")
-        system_prompt = self.SYSTEM_PROMPT_TEMPLATE.format(today=today)
+        self.today = datetime.now()
+        today_str = self.today.strftime("%Y-%m-%d")
+        day_of_week = self.today.strftime("%A")  # e.g., "Tuesday"
+        
+        # Calculate this Sunday (end of current week)
+        # Monday=0, Sunday=6 in weekday()
+        days_until_sunday = (6 - self.today.weekday()) % 7
+        if days_until_sunday == 0 and self.today.weekday() == 6:
+            # Today is Sunday
+            sunday_date = self.today
+        else:
+            # Calculate next Sunday
+            sunday_date = self.today + timedelta(days=days_until_sunday if days_until_sunday != 0 else 7)
+        
+        self.this_sunday = sunday_date
+        sunday_str = sunday_date.strftime("%Y-%m-%d")
+        sunday_dd_mm_yyyy = sunday_date.strftime("%d-%m-%Y")
+        
+        system_prompt = self.SYSTEM_PROMPT_TEMPLATE.format(
+            today=today_str, 
+            day_of_week=day_of_week,
+            this_sunday=sunday_dd_mm_yyyy
+        )
         self.llm_client = OllamaClient(model=model, system_prompt=system_prompt)
         self.model = model
     
@@ -117,8 +139,8 @@ Today's date: {today}
             {
                 "is_shift_query": bool,
                 "date_range_type": str,
-                "start_date": "YYYY-MM-DD",
-                "end_date": "YYYY-MM-DD",
+                "start_date": "DD-MM-YYYY",
+                "end_date": "DD-MM-YYYY",
                 "reasoning": str
             }
         """
@@ -145,6 +167,29 @@ Today's date: {today}
                 logger.warning(f"Missing fields in response: {date_info}")
                 return self._default_dates()
             
+            # Normalize dates to DD-MM-YYYY format regardless of LLM output format
+            start_date = date_info.get('start_date', '')
+            end_date = date_info.get('end_date', '')
+            
+            # If LLM returned YYYY-MM-DD, convert to DD-MM-YYYY
+            if start_date and '-' in start_date:
+                parts = start_date.split('-')
+                if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
+                    date_info['start_date'] = f"{parts[2]}-{parts[1]}-{parts[0]}"
+            
+            if end_date and '-' in end_date:
+                parts = end_date.split('-')
+                if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
+                    date_info['end_date'] = f"{parts[2]}-{parts[1]}-{parts[0]}"
+            
+            # Fix "this week" end date if LLM returned wrong date
+            if date_info.get('date_range_type') == 'this week' or date_info.get('date_range_type') == 'week':
+                # If LLM returned a date that doesn't match Sunday, correct it
+                sunday_str = self.this_sunday.strftime("%d-%m-%Y")
+                if date_info['end_date'] != sunday_str:
+                    logger.info(f"Correcting 'this week' end date from {date_info['end_date']} to {sunday_str}")
+                    date_info['end_date'] = sunday_str
+            
             logger.info(f"Determined dates: {date_info['start_date']} to {date_info['end_date']}")
             return date_info
             
@@ -163,8 +208,8 @@ Today's date: {today}
         return {
             "is_shift_query": True,
             "date_range_type": "week",
-            "start_date": today.strftime("%Y-%m-%d"),
-            "end_date": end.strftime("%Y-%m-%d"),
+            "start_date": today.strftime("%d-%m-%Y"),
+            "end_date": end.strftime("%d-%m-%Y"),
             "reasoning": "Default: next 7 days"
         }
     

@@ -56,18 +56,48 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Try both relative and absolute imports
 try:
-    from backend.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+    from backend.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name, search_staff_shifts_by_date
     from backend.automation.login_playwright import LoginAutomation
     from backend.automation.website_configs_playwright import get_config
     from backend.automation.secrets import get_admin_credentials, get_admin_totp_code
     from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 except ModuleNotFoundError:
-    from staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+    from staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name, search_staff_shifts_by_date
     from login_playwright import LoginAutomation
     from website_configs_playwright import get_config
     from secrets import get_admin_credentials, get_admin_totp_code
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'core', 'call_assistant'))
     from shift_date_reasoner import ShiftDateReasoner
+
+
+def get_date_range(start_date_str: str, end_date_str: str) -> list:
+    """
+    Generate a list of dates between start and end dates (inclusive).
+    
+    Args:
+        start_date_str: Start date in DD-MM-YYYY format
+        end_date_str: End date in DD-MM-YYYY format
+    
+    Returns:
+        List of dates in DD-MM-YYYY format
+    """
+    from datetime import timedelta
+    
+    # Parse dates
+    start_parts = start_date_str.split("-")
+    start = datetime(int(start_parts[2]), int(start_parts[1]), int(start_parts[0]))
+    
+    end_parts = end_date_str.split("-")
+    end = datetime(int(end_parts[2]), int(end_parts[1]), int(end_parts[0]))
+    
+    # Generate date range
+    dates = []
+    current = start
+    while current <= end:
+        dates.append(current.strftime("%d-%m-%Y"))
+        current += timedelta(days=1)
+    
+    return dates
 
 
 async def test_integrated_workflow(phone_number: str, transcript: str):
@@ -157,17 +187,40 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             print(f"    Reasoning: {date_info['reasoning']}")
             
             # STEP 5: Shift Search with Date Filtering
-            print("\n[STEP 5] Searching for shifts with date range filter...")
+            print("\n[STEP 5] Searching for shifts and filtering by date range...")
             print(f"[*] Searching shifts for: {staff['full_name']}")
             print(f"[*] Filtering to date range: {date_info['start_date']} to {date_info['end_date']}")
             
-            # Pass reasoned dates to search function for filtering on Ezaango
-            all_shifts = await search_staff_shifts_by_name(
-                page, 
-                staff['full_name'],
-                start_date=date_info['start_date'],
-                end_date=date_info['end_date']
-            )
+            # First, navigate to staff search to get all their shifts
+            search_name = staff['full_name'].replace(" ", "+")
+            search_url = f"https://hahs-vic3495.ezaango.app/search?keyword={search_name}"
+            print(f"[*] Navigating to search results: {search_url}")
+            await page.goto(search_url, wait_until="networkidle")
+            await page.wait_for_selector("table tbody tr", timeout=10000)
+            print(f"[+] Staff search page loaded")
+            
+            # Check if it's a date range (multiple days) or single day
+            start_date = date_info['start_date']
+            end_date = date_info['end_date']
+            
+            all_shifts = []
+            
+            if start_date == end_date:
+                # Single day: filter by that date only
+                print(f"[*] Single day filter: {start_date}")
+                shifts_for_date = await search_staff_shifts_by_date(page, start_date)
+                all_shifts = shifts_for_date
+            else:
+                # Date range: filter by each date individually
+                print(f"[*] Date range detected: filtering by each date")
+                dates_to_search = get_date_range(start_date, end_date)
+                print(f"[*] Dates to filter: {', '.join(dates_to_search)}")
+                
+                for search_date in dates_to_search:
+                    print(f"[*] Filtering for {staff['full_name']} on {search_date}...")
+                    shifts_for_date = await search_staff_shifts_by_date(page, search_date)
+                    all_shifts.extend(shifts_for_date)
+                    print(f"    Found {len(shifts_for_date)} shifts on {search_date}")
             
             if not all_shifts:
                 print(f"[!] No shifts found for {staff['full_name']}")
@@ -178,25 +231,15 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
                     'filtered_shifts': []
                 }
             
-            print(f"[+] Found {len(all_shifts)} shifts (already filtered by date range on server)")
+            print(f"[+] Found {len(all_shifts)} total shifts in date range")
             
-            # Additional local filtering for safety (in case server filtering isn't applied)
-            start_date = date_info['start_date']
-            end_date = date_info['end_date']
+            # Results are already filtered by date using the input field
+            # No additional filtering needed
+            filtered_shifts = all_shifts
+            start_date_display = date_info['start_date']
+            end_date_display = date_info['end_date']
             
-            # Filter shifts with valid dates and within range (backup filter)
-            # Note: s['date'] is in DD-MM-YYYY format, convert to YYYY-MM-DD for comparison
-            filtered_shifts = []
-            for s in all_shifts:
-                if s['date'] is None:
-                    continue
-                # Convert DD-MM-YYYY to YYYY-MM-DD for comparison
-                date_parts = s['date'].split("-")
-                shift_date_normalized = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
-                if start_date <= shift_date_normalized <= end_date:
-                    filtered_shifts.append(s)
-            
-            print(f"[+] Filtered to {len(filtered_shifts)} shifts in date range ({start_date} to {end_date}):")
+            print(f"[+] Filtered to {len(filtered_shifts)} shifts in date range ({start_date_display} to {end_date_display}):")
             
             if filtered_shifts:
                 for i, shift in enumerate(filtered_shifts[:5], 1):
