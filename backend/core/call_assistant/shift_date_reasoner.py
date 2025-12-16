@@ -98,12 +98,12 @@ This Sunday is: {this_sunday}
 Today's date: {today} ({day_of_week})
 """
 
-    def __init__(self, model: str = "llama2", override_today: Optional[str] = None):
+    def __init__(self, model: str = "llama2:latest", override_today: Optional[str] = None):
         """
         Initialize the LLM client for date reasoning.
         
         Args:
-            model: LLM model to use (default: llama2)
+            model: LLM model to use (default: llama2:latest)
             override_today: Optional YYYY-MM-DD date string to use instead of actual today
                            (useful for testing on different machines with different system dates)
                            Can also be set via SHIFT_REASONER_TODAY environment variable
