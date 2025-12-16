@@ -158,7 +158,7 @@ Today's date: {today} ({day_of_week})
         self.llm_client = OllamaClient(model=model, system_prompt=system_prompt)
         self.model = model
     
-    def reason_dates(self, user_query: str) -> dict:
+    def reason_dates(self, user_query: str, retry_on_defaults: bool = True) -> dict:
         """
         Use LLM to determine relevant dates for a shift query.
         
@@ -166,6 +166,7 @@ Today's date: {today} ({day_of_week})
             user_query: User's question about shifts
                 Example: "When is my shift tomorrow?"
                 Example: "What shifts do I have next week?"
+            retry_on_defaults: If True, retry the query if defaults are returned (for intermittent LLM issues)
         
         Returns:
             Dict with:
@@ -177,78 +178,107 @@ Today's date: {today} ({day_of_week})
                 "reasoning": str
             }
         """
-        try:
-            logger.info(f"Reasoning dates for query: {user_query}")
-            logger.debug(f"LLM context - Today: {self.today.strftime('%Y-%m-%d')}, This Sunday: {self.this_sunday.strftime('%Y-%m-%d')}")
-            
-            response = self.llm_client.ask_llm(user_query)
-            logger.debug(f"LLM response: {response}")
-            
-            # Try to extract JSON from response (in case there's extra text)
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            
-            if start_idx == -1 or end_idx == 0:
-                logger.error(f"No JSON found in LLM response. Response was: {response}")
-                logger.warning("Falling back to default dates (next 7 days)")
-                return self._default_dates()
-            
-            json_str = response[start_idx:end_idx]
+        max_retries = 2 if retry_on_defaults else 1
+        attempt = 0
+        
+        while attempt < max_retries:
+            attempt += 1
             try:
-                date_info = json.loads(json_str)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON from LLM: {json_str[:200]}")
-                logger.error(f"JSON error: {e}")
+                logger.info(f"Reasoning dates for query: {user_query} (attempt {attempt}/{max_retries})")
+                logger.debug(f"LLM context - Today: {self.today.strftime('%Y-%m-%d')}, This Sunday: {self.this_sunday.strftime('%Y-%m-%d')}")
+                
+                # Verify system prompt is in the conversation
+                history = self.llm_client.get_history()
+                if not history or history[0].get('role') != 'system':
+                    logger.warning("System prompt missing from LLM history! Re-initializing...")
+                    # Reinitialize to restore system prompt
+                    system_prompt = self.SYSTEM_PROMPT_TEMPLATE.format(
+                        today=self.today.strftime("%Y-%m-%d"),
+                        day_of_week=self.today.strftime("%A"),
+                        this_sunday=self.this_sunday.strftime("%d-%m-%Y")
+                    )
+                    self.llm_client.set_system_prompt(system_prompt)
+                
+                response = self.llm_client.ask_llm(user_query)
+                logger.debug(f"LLM response (attempt {attempt}): {response[:500]}...")
+            
+                # Try to extract JSON from response (in case there's extra text)
+                start_idx = response.find('{')
+                end_idx = response.rfind('}') + 1
+                
+                if start_idx == -1 or end_idx == 0:
+                    logger.error(f"No JSON found in LLM response (attempt {attempt}). Response was: {response}")
+                    if attempt < max_retries:
+                        logger.warning(f"Retrying... (attempt {attempt + 1})")
+                        self.llm_client.clear_history(keep_system_prompt=True)
+                        continue
+                    logger.warning("Falling back to default dates (next 7 days)")
+                    return self._default_dates()
+                
+                json_str = response[start_idx:end_idx]
+                try:
+                    date_info = json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON from LLM (attempt {attempt}): {json_str[:200]}")
+                    logger.error(f"JSON error: {e}")
+                    if attempt < max_retries:
+                        logger.warning(f"Retrying... (attempt {attempt + 1})")
+                        self.llm_client.clear_history(keep_system_prompt=True)
+                        continue
+                    logger.warning("Falling back to default dates (next 7 days)")
+                    return self._default_dates()
+                
+                # Validate response has required fields
+                required_fields = ["is_shift_query", "date_range_type", "start_date", "end_date"]
+                if not all(field in date_info for field in required_fields):
+                    missing = [f for f in required_fields if f not in date_info]
+                    logger.warning(f"Missing required fields in response (attempt {attempt}): {missing}. Got: {date_info}")
+                    if attempt < max_retries:
+                        logger.warning(f"Retrying... (attempt {attempt + 1})")
+                        self.llm_client.clear_history(keep_system_prompt=True)
+                        continue
+                    logger.warning("Falling back to default dates (next 7 days)")
+                    return self._default_dates()
+                
+                # Normalize dates to DD-MM-YYYY format regardless of LLM output format
+                start_date = date_info.get('start_date', '')
+                end_date = date_info.get('end_date', '')
+                
+                # If LLM returned YYYY-MM-DD, convert to DD-MM-YYYY
+                if start_date and '-' in start_date:
+                    parts = start_date.split('-')
+                    if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
+                        date_info['start_date'] = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                
+                if end_date and '-' in end_date:
+                    parts = end_date.split('-')
+                    if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
+                        date_info['end_date'] = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                
+                # Fix "this week" end date if LLM returned wrong date
+                if date_info.get('date_range_type') == 'this week' or date_info.get('date_range_type') == 'week':
+                    # If LLM returned a date that doesn't match Sunday, correct it
+                    sunday_str = self.this_sunday.strftime("%d-%m-%Y")
+                    if date_info['end_date'] != sunday_str:
+                        logger.info(f"Correcting 'this week' end date from {date_info['end_date']} to {sunday_str}")
+                        date_info['end_date'] = sunday_str
+                
+                logger.info(f"Determined dates (attempt {attempt}): {date_info['start_date']} to {date_info['end_date']}")
+                
+                # Clear conversation history for next reasoning to avoid contamination
+                self.llm_client.clear_history(keep_system_prompt=True)
+                
+                return date_info
+            
+            except Exception as e:
+                logger.error(f"Error reasoning dates (attempt {attempt}): {e}")
+                logger.exception("Full traceback:")
+                if attempt < max_retries:
+                    logger.warning(f"Retrying... (attempt {attempt + 1})")
+                    self.llm_client.clear_history(keep_system_prompt=True)
+                    continue
                 logger.warning("Falling back to default dates (next 7 days)")
                 return self._default_dates()
-            
-            # Validate response has required fields
-            required_fields = ["is_shift_query", "date_range_type", "start_date", "end_date"]
-            if not all(field in date_info for field in required_fields):
-                missing = [f for f in required_fields if f not in date_info]
-                logger.warning(f"Missing required fields in response: {missing}. Got: {date_info}")
-                logger.warning("Falling back to default dates (next 7 days)")
-                return self._default_dates()
-            
-            # Normalize dates to DD-MM-YYYY format regardless of LLM output format
-            start_date = date_info.get('start_date', '')
-            end_date = date_info.get('end_date', '')
-            
-            # If LLM returned YYYY-MM-DD, convert to DD-MM-YYYY
-            if start_date and '-' in start_date:
-                parts = start_date.split('-')
-                if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
-                    date_info['start_date'] = f"{parts[2]}-{parts[1]}-{parts[0]}"
-            
-            if end_date and '-' in end_date:
-                parts = end_date.split('-')
-                if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
-                    date_info['end_date'] = f"{parts[2]}-{parts[1]}-{parts[0]}"
-            
-            # Fix "this week" end date if LLM returned wrong date
-            if date_info.get('date_range_type') == 'this week' or date_info.get('date_range_type') == 'week':
-                # If LLM returned a date that doesn't match Sunday, correct it
-                sunday_str = self.this_sunday.strftime("%d-%m-%Y")
-                if date_info['end_date'] != sunday_str:
-                    logger.info(f"Correcting 'this week' end date from {date_info['end_date']} to {sunday_str}")
-                    date_info['end_date'] = sunday_str
-            
-            logger.info(f"Determined dates: {date_info['start_date']} to {date_info['end_date']}")
-            
-            # Clear conversation history for next reasoning to avoid contamination
-            self.llm_client.clear_history(keep_system_prompt=True)
-            
-            return date_info
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {e}")
-            logger.warning("Falling back to default dates (next 7 days)")
-            return self._default_dates()
-        except Exception as e:
-            logger.error(f"Error reasoning dates: {e}")
-            logger.exception("Full traceback:")  # Log full exception with traceback
-            logger.warning("Falling back to default dates (next 7 days)")
-            return self._default_dates()
     
     def _default_dates(self) -> dict:
         """Return default date range (today + 7 days)."""
