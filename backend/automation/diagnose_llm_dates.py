@@ -60,10 +60,10 @@ def diagnose():
         model_names = [m.get('name', 'unknown') for m in models.get('models', [])]
         print(f"     Models: {', '.join(model_names[:5])}")
         
-        if not any('llama2' in m for m in model_names):
-            print("     [WARN] llama2 model not found!")
+        if not any('llama2:latest' in m for m in model_names):
+            print("     [WARN] llama2:latest model not found!")
         else:
-            print("     [OK] llama2 model found")
+            print("     [OK] llama2:latest model found")
             
     except Exception as e:
         print(f"[FAIL] Could not reach Ollama: {e}")
@@ -74,7 +74,7 @@ def diagnose():
     print("\n[3] BASIC LLM RESPONSE TEST")
     print("-" * 80)
     try:
-        basic_client = OllamaClient(model="llama2", system_prompt="You are a helpful assistant.")
+        basic_client = OllamaClient(model="llama2:latest", system_prompt="You are a helpful assistant.")
         response = basic_client.ask_llm("What is 2+2?")
         print(f"[OK] LLM responded successfully")
         print(f"     Response: {response[:100]}...")
@@ -86,8 +86,8 @@ def diagnose():
     print("\n[4] SYSTEM PROMPT GENERATION")
     print("-" * 80)
     try:
-        reasoner = ShiftDateReasoner(model="llama2")
-        print(f"[OK] ShiftDateReasoner initialized with llama2")
+        reasoner = ShiftDateReasoner(model="llama2:latest")
+        print(f"[OK] ShiftDateReasoner initialized with llama2:latest")
         print(f"     Today: {reasoner.today.strftime('%Y-%m-%d')}")
         print(f"     Day of week: {reasoner.today.strftime('%A')}")
         print(f"     This Sunday: {reasoner.this_sunday.strftime('%Y-%m-%d')}")
@@ -172,7 +172,7 @@ def diagnose():
     print("=" * 80)
     print("\nNEXT STEPS:")
     print("- If Ollama is not reachable, start it: ollama serve")
-    print("- If llama2 is not available, pull it: ollama pull llama2")
+    print("- If llama2:latest is not available, pull it: ollama pull llama2:latest")
     print("- If date format is YYYY-MM-DD, the conversion is not working")
     print("- If defaults are being returned, check the LLM response format")
     print("- Share this output when reporting issues on another machine")
