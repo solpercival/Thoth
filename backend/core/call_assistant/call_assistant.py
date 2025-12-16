@@ -176,7 +176,7 @@ class CallAssistant:
                     ]
                 }
                 
-                print(json.dumps(formatted_response, indent=2))
+                #print(json.dumps(formatted_response, indent=2))
                 return json.dumps(formatted_response)
             else:
                 return json.dumps({'error': 'Failed to process shift request'})
