@@ -6,14 +6,49 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import asyncio
+import json
 from time import sleep
 from threading import Event
 from backend.core.call_assistant.system_audio_whisper_client import SystemAudioWhisperClient
 from backend.core.call_assistant.llm_client import OllamaClient
-from typing import Optional
+from typing import Optional, Any
 
 from backend.core.call_assistant.tts_client import TTSClient
 from backend.automation.test_integrated_workflow import test_integrated_workflow
+
+
+def print_dict(data: Any, title: str = None) -> None:
+    """
+    Helper function to print dictionaries in a readable format.
+
+    Args:
+        data: Dictionary or JSON-serializable object to print
+        title: Optional title to display above the output
+    """
+    if title:
+        print(f"\n{'='*10} {title} {'='*10}")
+
+    # If data is a JSON string, parse it first
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except (json.JSONDecodeError, TypeError):
+            print(data)
+            if title:
+                print('=' * (22 + len(title)))
+            return
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            print(f"{key}: {value}")
+    elif isinstance(data, list):
+        for item in data:
+            print(item)
+    else:
+        print(data)
+
+    if title:
+        print('=' * (22 + len(title)))
 
 # Own dependencies
 LLM_SYSTEM_PROMPT = """THIS IS IMPORTANT THAT YOU FOLLOW THE OUTPUTS EXACTLY. You are a call center routing agent. Your ONLY job is to classify user requests and output exactly ONE of the following tags. You must NEVER write explanations, stories, or any other text.
@@ -35,7 +70,10 @@ User: "What's the weather?" → <DENY>
 """
 
 FORMAT_SYSTEM_PROMPT = """
-    Can you format this list into a readable version
+    You are a shift agent tasked with converting shift information in the form of dictionary to a normal sentence.
+    Make sure there are no special characters like emojis.
+    Example:
+    "You have a shift with [client name] at [date]"
 """
 
 
@@ -45,7 +83,7 @@ class CallAssistant:
     """
     def __init__(self, caller_phone: Optional[str] = None):
         self.caller_phone = caller_phone  # Store caller phone number for context
-        self.llm_client: OllamaClient = OllamaClient(model="gemma3:1b", system_prompt=LLM_SYSTEM_PROMPT)
+        self.llm_client: OllamaClient = OllamaClient(model="qwen2.5:7b", system_prompt=LLM_SYSTEM_PROMPT)
         self.whisper_client: SystemAudioWhisperClient = None
         self.llm_response_array = []
         self.transcript = ""
@@ -81,16 +119,18 @@ class CallAssistant:
 
 
         # Send the results to the llm
-        # print([SENDING AGENT DATA TO LLM])
-        # llm_response = self.llm_client.ask_llm(route_response)
+        print("[SENDING AGENT DATA TO LLM]")
+        print_dict(route_response, "Results")
+        self.llm_client.set_system_prompt(FORMAT_SYSTEM_PROMPT)
+        llm_response = self.llm_client.ask_llm(route_response)
+
+        print("[LLM PROCESSED RESPONSE]")
+        print(llm_response)
 
         # Convert it to TTS and pipe it through 3CX
         # print([PLAYING LLM RESPONSE])
-        # tts_play(llm_response)
-
-        print(route_response)
-        #tts_client: TTSClient = TTSClient()
-        #tts_client.text_to_speech(route_response)
+        tts_client:TTSClient = TTSClient(output_device_name="CABLE Input")
+        tts_client.text_to_speech("Thank you for waiting." + llm_response)
 
         # Resume the whisper client again
         self.whisper_client.resume()
@@ -121,20 +161,17 @@ class CallAssistant:
     def _route_intent(self, intent_tag: str) -> str:
         """
         Route the LLM intent to the appropriate handler.
-        
+
         Args:
             intent_tag: One of <LOGIN>, <SHIFT>, <REAL>, <DENY>
         Return:
             script to be passed into tts
         """
-        import json
         
         if "<SHIFT>" in intent_tag and self.caller_phone:
             print(f"[ROUTING] Shift check request for {self.caller_phone}")
             
             result:dict = asyncio.run(test_integrated_workflow(self.caller_phone, self.transcript))
-            print("===RESULTS===")
-            print(result)
             
             if result:
                 # Extract the reasoning flag and separate it from the explanation

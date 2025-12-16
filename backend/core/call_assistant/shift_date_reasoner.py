@@ -85,7 +85,7 @@ TASK: Given a user's query about their shifts, output ONLY a JSON object (no oth
 
 DATE INTERPRETATION RULES:
 - "When is my shift?" or "What shifts do I have?" → today + next 7 days
-- "Tomorrow" → the next day from today
+- "Tomorrow" → get the date today and add one day
 - "Next week" → 7 days from today
 - "This week" → from TODAY until {this_sunday}
 - "Next month" → entire next calendar month

@@ -55,7 +55,7 @@ class SystemAudioWhisperClient:
     """
     def __init__(self, model="medium", non_english=False, energy_threshold=1000,
                  record_timeout=0.5, phrase_timeout=5, on_phrase_complete=None,
-                 silence_threshold=0.002, max_phrase_duration=15):
+                 silence_threshold=0.01, max_phrase_duration=15):
         """
         Initialize the transcription service.
         
