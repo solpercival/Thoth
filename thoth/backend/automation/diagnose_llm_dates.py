@@ -86,7 +86,7 @@ def diagnose():
     print("\n[4] SYSTEM PROMPT GENERATION")
     print("-" * 80)
     try:
-        reasoner = ShiftDateReasoner(model="llama2:latest")
+        reasoner = ShiftDateReasoner(model="qwen2.5:7b")
         print(f"[OK] ShiftDateReasoner initialized with llama2:latest")
         print(f"     Today: {reasoner.today.strftime('%Y-%m-%d')}")
         print(f"     Day of week: {reasoner.today.strftime('%A')}")

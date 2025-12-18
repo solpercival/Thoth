@@ -127,6 +127,9 @@ class CallAssistantV3:
         Args:
             phrase: Transcribed user speech
         """
+        #TODO: Play TTS saying "Just a minute", "Let me work on that for abit", "Hold on a sec", etc
+
+
         print(f"\n{'='*50}")
         print(f"[USER SAID] {phrase}")
         print(f"{'='*50}")
