@@ -7,6 +7,7 @@ sys.path.insert(0, str(project_root))
 
 import asyncio
 import json
+import os
 import re
 from time import sleep
 from threading import Event
