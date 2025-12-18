@@ -14,6 +14,8 @@ from backend.core.call_assistant.llm_client import OllamaClient
 from typing import Optional, Any
 
 from backend.core.call_assistant.tts_client import TTSClient
+from backend.core.email_agent.email_formatter import *
+from backend.core.email_agent.email_sender import *
 from backend.automation.test_integrated_workflow import test_integrated_workflow
 
 
@@ -120,7 +122,8 @@ class CallAssistant:
 
         # Send the results to the llm
         print("[SENDING AGENT DATA TO LLM]")
-        print_dict(route_response, "Results")
+        #print_dict(route_response, "Results")
+        print(route_response)
         self.llm_client.set_system_prompt(FORMAT_SYSTEM_PROMPT)
         llm_response = self.llm_client.ask_llm(route_response)
 
@@ -128,9 +131,11 @@ class CallAssistant:
         print(llm_response)
 
         # Convert it to TTS and pipe it through 3CX
-        # print([PLAYING LLM RESPONSE])
+        print("[PLAYING LLM RESPONSE]")
         tts_client:TTSClient = TTSClient(output_device_name="CABLE Input")
-        tts_client.text_to_speech("Thank you for waiting." + llm_response)
+        tts_client.text_to_speech("Thank you for waiting " + llm_response)
+
+        # 
 
         # Resume the whisper client again
         self.whisper_client.resume()
