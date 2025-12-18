@@ -428,7 +428,11 @@ class CallAssistantV3:
         """
         print(f"\n[SPEAKING] {text}\n")
         try:
-            tts_client = TTSClient(output_device_name="CABLE Input")
+            # Get TTS device from environment variable
+            # Windows default: "CABLE Input" (VB-Audio Virtual Cable)
+            # Linux default: "virtual_speaker" (PulseAudio virtual sink)
+            tts_device = os.getenv("TTS_OUTPUT_DEVICE", "CABLE Input")
+            tts_client = TTSClient(output_device_name=tts_device)
             tts_client.text_to_speech(text)
         except Exception as e:
             print(f"[TTS ERROR] {e}")
