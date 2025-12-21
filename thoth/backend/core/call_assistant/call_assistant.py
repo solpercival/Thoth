@@ -132,7 +132,10 @@ class CallAssistant:
 
         # Convert it to TTS and pipe it through 3CX
         print("[PLAYING LLM RESPONSE]")
-        tts_client:TTSClient = TTSClient(output_device_name="CABLE Input")
+        # Use platform-specific device name
+        import platform
+        device_name = "CABLE Input" if platform.system() == "Windows" else "virtual_speaker"
+        tts_client = TTSClient(output_device_name=device_name)
         tts_client.text_to_speech("Thank you for waiting " + llm_response)
 
         # 

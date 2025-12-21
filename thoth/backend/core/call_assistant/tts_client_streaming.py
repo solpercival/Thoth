@@ -82,25 +82,27 @@ class StreamingTTSClient:
             self.virtual_device = self.pyaudio.get_default_output_device_info()
 
     def _setup_linux_virtual_device(self) -> None:
-        """Setup Linux virtual audio device (PulseAudio)"""
+        """Setup Linux virtual audio device (PipeWire/PulseAudio)"""
         self.pyaudio = pyaudio.PyAudio()
 
-        # Look for virtual sink monitor or create instructions
+        # Look for virtual_speaker or any virtual/monitor device
         virtual_device = None
 
         for i in range(self.pyaudio.get_device_count()):
             info = self.pyaudio.get_device_info_by_index(i)
-            # Look for virtual sink or monitor device
-            if ('virtual' in info['name'].lower() or
-                'monitor' in info['name'].lower()) and info['maxOutputChannels'] > 0:
+            # First priority: virtual_speaker
+            if 'virtual_speaker' in info['name'].lower() and info['maxOutputChannels'] > 0:
                 virtual_device = info
                 break
+            # Fallback: any virtual or monitor device
+            if virtual_device is None and (('virtual' in info['name'].lower() or
+                'monitor' in info['name'].lower()) and info['maxOutputChannels'] > 0):
+                virtual_device = info
 
         if virtual_device is None:
             print("\n⚠️  WARNING: No virtual audio sink found!")
-            print("To create a virtual microphone on Linux, run:")
-            print("  pactl load-module module-null-sink sink_name=virtual_mic sink_properties=device.description=Virtual_Microphone")
-            print("  pactl load-module module-remap-source source_name=virtual_mic_source master=virtual_mic.monitor source_properties=device.description=Virtual_Microphone_Source")
+            print("To create a virtual microphone on Linux with PipeWire/PulseAudio, run:")
+            print("  pactl load-module module-null-sink sink_name=virtual_speaker media.class=Audio/Sink")
             print("\nFalling back to default output device...\n")
 
             # Fallback to default

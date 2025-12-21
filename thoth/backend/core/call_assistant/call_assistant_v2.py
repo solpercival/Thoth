@@ -424,7 +424,10 @@ class CallAssistantV2:
             text: The text to speak
         """
         print(f"[TTS] {text}")
-        tts_client = TTSClient(output_device_name="CABLE Input")
+        # Use platform-specific device name
+        import platform
+        device_name = "CABLE Input" if platform.system() == "Windows" else "virtual_speaker"
+        tts_client = TTSClient(output_device_name=device_name)
         tts_client.text_to_speech(text)
 
     def _speak_and_reset(self, text: str) -> None:
