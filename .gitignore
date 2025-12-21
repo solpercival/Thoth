@@ -4,3 +4,4 @@ __pycache__/
 .sessions/*.json
 .env
 .venv/
+.env.linux

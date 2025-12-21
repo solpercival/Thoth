@@ -9,8 +9,8 @@ import asyncio
 import json
 from time import sleep
 from threading import Event
-from backend.core.call_assistant.system_audio_whisper_client import SystemAudioWhisperClient
-from backend.core.call_assistant.llm_client import OllamaClient
+from whisper.system_audio_whisper_client import SystemAudioWhisperClient
+from ollama.llm_client import OllamaClient
 from typing import Optional, Any
 
 from backend.core.call_assistant.tts_client import TTSClient

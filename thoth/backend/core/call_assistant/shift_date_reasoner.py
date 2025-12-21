@@ -59,7 +59,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from typing import List, Optional
-from backend.core.call_assistant.llm_client import OllamaClient
+from ollama.llm_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 

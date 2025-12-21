@@ -24,13 +24,8 @@ import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-try:
-    from backend.core.call_assistant.llm_client import OllamaClient
-    from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'core', 'call_assistant'))
-    from llm_client import OllamaClient
-    from shift_date_reasoner import ShiftDateReasoner
+from ollama.llm_client import OllamaClient
+from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 
 
 def diagnose():
