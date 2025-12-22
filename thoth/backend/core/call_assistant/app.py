@@ -2,8 +2,12 @@ import sys
 from pathlib import Path
 
 # Add project root to Python path
-project_root = Path(__file__).resolve().parent.parent.parent.parent
+# Files are at: Thoth/thoth/backend/core/call_assistant/
+# Need to add both Thoth/ (for whisper/, ollama/) and Thoth/thoth/ (for backend/)
+project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+thoth_root = project_root / "thoth"
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(thoth_root))
 
 
 

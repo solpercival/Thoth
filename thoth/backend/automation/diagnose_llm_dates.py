@@ -21,16 +21,15 @@ from datetime import datetime, timedelta
 import json
 
 # Add parent directories to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# File is at: Thoth/thoth/backend/automation/
+# Need to add both Thoth/ (for whisper/, ollama/) and Thoth/thoth/ (for backend/)
+project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+thoth_root = os.path.join(os.path.dirname(__file__), '..', '..')
+sys.path.insert(0, project_root)
+sys.path.insert(0, thoth_root)
 
-try:
-    from backend.core.call_assistant.llm_client import OllamaClient
-    from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
-except ImportError:
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'core', 'call_assistant'))
-    from llm_client import OllamaClient
-    from shift_date_reasoner import ShiftDateReasoner
+from ollama.llm_client import OllamaClient
+from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 
 
 def diagnose():
