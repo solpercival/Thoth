@@ -1,5 +1,9 @@
-from email_sender import send_email, send_notify_email
-from email_formatter import format_ezaango_shift_data
+try:
+    from .email_sender import send_email, send_notify_email
+    from .email_formatter import format_ezaango_shift_data
+except ImportError:
+    from email_sender import send_email, send_notify_email
+    from email_formatter import format_ezaango_shift_data
 
 def test_1() -> None:
     """

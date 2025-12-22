@@ -19,14 +19,11 @@ import sys
 import os
 from datetime import datetime, timedelta
 import json
+from pathlib import Path
 
 # Add parent directories to path for imports
-# File is at: Thoth/thoth/backend/automation/
-# Need to add both Thoth/ (for whisper/, ollama/) and Thoth/thoth/ (for backend/)
-project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..')
-thoth_root = os.path.join(os.path.dirname(__file__), '..', '..')
-sys.path.insert(0, project_root)
-sys.path.insert(0, thoth_root)
+backend_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(backend_root))
 
 from ollama_client.llm_client import OllamaClient
 from thoth.core.call_assistant.shift_date_reasoner import ShiftDateReasoner

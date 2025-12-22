@@ -2,9 +2,16 @@
 Test script for ShiftDateReasoner with actual user transcript.
 """
 import sys
-sys.path.insert(0, '/Users/Yonsuncrat/Videos/Algorithms and Data Structures/thoth/backend/core/call_assistant')
+from pathlib import Path
 
-from shift_date_reasoner import ShiftDateReasoner
+# Add backend root to path
+backend_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(backend_root))
+
+try:
+    from thoth.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
+except ImportError:
+    from shift_date_reasoner import ShiftDateReasoner
 
 def test_date_reasoning():
     """Test the date reasoner with sample user input."""

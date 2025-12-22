@@ -14,13 +14,14 @@ import sys
 import os
 import argparse
 from datetime import datetime
+from pathlib import Path
 
 # Add parent directories to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+backend_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(backend_root))
 
 try:
-    from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
+    from thoth.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'core', 'call_assistant'))
     from shift_date_reasoner import ShiftDateReasoner
