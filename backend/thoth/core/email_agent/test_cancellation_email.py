@@ -1,7 +1,10 @@
 """
 Test the email formatter with cancellation reason
 """
-from email_formatter import format_ezaango_shift_data
+try:
+    from .email_formatter import format_ezaango_shift_data
+except ImportError:
+    from email_formatter import format_ezaango_shift_data
 
 # Test data
 test_data = {

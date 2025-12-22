@@ -1,4 +1,7 @@
-from agents import Agent
+try:
+    from .agent import Agent
+except ImportError:
+    from agent import Agent
 
 def choose_agent(llm_response:str) -> Agent:
     """
