@@ -14,8 +14,8 @@ import json
 from time import sleep
 from threading import Event
 from enum import Enum
-from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
-from ollama_client.llm_client import OllamaClient
+from whisper.system_audio_whisper_client import SystemAudioWhisperClient
+from ollama.llm_client import OllamaClient
 from typing import Optional, Any, Dict, List
 
 from backend.core.call_assistant.tts_client import TTSClient

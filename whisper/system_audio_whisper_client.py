@@ -105,60 +105,37 @@ class SystemAudioWhisperClient:
         """Get the appropriate system audio device based on OS"""
         with noalsaerr():
             p = pyaudio.PyAudio()
-
+        
         system = platform.system()
-        print(f"\n{'='*60}", flush=True)
-        print(f"DEBUG: Detected OS: {system}", flush=True)
-        print(f"{'='*60}\n", flush=True)
-
+        
         if system == "Windows":
-            print("DEBUG: Initializing Windows audio (WASAPI loopback)...", flush=True)
             try:
                 import pyaudiowpatch as pyaudio_patch
-                print("DEBUG: pyaudiowpatch imported successfully", flush=True)
                 p_patch = pyaudio_patch.PyAudio()
-                print("DEBUG: PyAudio instance created", flush=True)
                 
                 # Get default WASAPI loopback device
-                print("DEBUG: Getting WASAPI host API info...", flush=True)
                 wasapi_info = p_patch.get_host_api_info_by_type(pyaudio_patch.paWASAPI)
                 default_speakers = p_patch.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
-                print(f"DEBUG: Default speakers: {default_speakers['name']}", flush=True)
-
+                
                 if not default_speakers["isLoopbackDevice"]:
-                    print("DEBUG: Searching for loopback device...", flush=True)
                     for loopback in p_patch.get_loopback_device_info_generator():
                         if default_speakers["name"] in loopback["name"]:
                             default_speakers = loopback
-                            print(f"DEBUG: Found loopback device: {loopback['name']}", flush=True)
                             break
-
+                
                 p.terminate()
-                print("DEBUG: Windows audio device configured successfully", flush=True)
                 return p_patch, default_speakers
-            except ImportError as e:
-                print("\n" + "="*60, flush=True)
-                print("ERROR: pyaudiowpatch not installed!", flush=True)
-                print("For Windows system audio capture, install:", flush=True)
-                print("  pip install pyaudiowpatch", flush=True)
-                print("="*60 + "\n", flush=True)
-                p.terminate()
-                raise ImportError("pyaudiowpatch is required for Windows. Install with: pip install pyaudiowpatch") from e
-            except Exception as e:
-                print(f"ERROR: Failed to initialize Windows audio: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
+            except ImportError:
+                print("For Windows, install: pip install pyaudiowpatch")
                 p.terminate()
                 raise
         
         elif system == "Linux":
-            print("DEBUG: Initializing Linux audio (PulseAudio)...", flush=True)
             # Find any active audio source in PyAudio
             import subprocess
-
+            
             # Get list of all sources and find the first RUNNING one, otherwise IDLE
-            print("DEBUG: Querying PulseAudio sources...", flush=True)
-            result = subprocess.run(['pactl', 'list', 'sources', 'short'],
+            result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
                                 capture_output=True, text=True)
             
             active_source = None
@@ -198,23 +175,20 @@ class SystemAudioWhisperClient:
                 self.current_source = None
             
             # Find the 'pulse' device in PyAudio
-            print("DEBUG: Finding PulseAudio device in PyAudio...", flush=True)
             pulse_device = None
-
+            
             with noalsaerr():
                 for i in range(p.get_device_count()):
                     info = p.get_device_info_by_index(i)
                     if info['name'] == 'pulse' and info['maxInputChannels'] > 0:
                         pulse_device = info
-                        print(f"DEBUG: Found pulse device at index {i}", flush=True)
                         break
-
+            
             if pulse_device is None:
-                print("ERROR: No PulseAudio device found in PyAudio", flush=True)
+                print("No PulseAudio device found in PyAudio")
                 p.terminate()
                 raise ValueError("No pulse device found")
-
-            print("DEBUG: Linux audio device configured successfully", flush=True)
+            
             return p, pulse_device
         
         else:
@@ -224,20 +198,18 @@ class SystemAudioWhisperClient:
     
     def _initialize_audio(self):
         """Initialize audio components."""
-        print("\nDEBUG: _initialize_audio() called", flush=True)
         # Get system audio device
-        print("DEBUG: Getting system audio device...", flush=True)
         self.pyaudio_instance, self.device_info = self._get_system_audio_device()
-
-        print(f"\n✓ Using audio device: {self.device_info['name']}", flush=True)
-
+        
+        print(f"Using audio device: {self.device_info['name']}")
+        
         # Load Whisper model
         model = self.model_name
         if self.model_name != "large" and not self.non_english:
             model = model + ".en"
-        print(f"\nDEBUG: Loading Whisper model '{model}'... (this may take a moment)", flush=True)
+        print(f"Loading Whisper model: {model}")
         self.audio_model = whisper.load_model(model)
-        print("✓ Whisper model loaded successfully\n", flush=True)
+        print("Model loaded.")
     
     def _update_source_info(self, source_name):
         """Get channel count and sample rate from PulseAudio source"""
@@ -555,20 +527,16 @@ class SystemAudioWhisperClient:
     
     def start(self):
         """Start the transcription service."""
-        print("\nDEBUG: start() method called", flush=True)
         if self.is_running:
             print("Transcription service is already running!")
             return
-
-        print("\n" + "="*60, flush=True)
-        print("Starting system audio transcription service...", flush=True)
-        print("="*60, flush=True)
-
+        
+        print("Starting system audio transcription service...")
+        
         # Initialize audio components
         self._initialize_audio()
-
+        
         # Reset state
-        print("DEBUG: Resetting state variables...", flush=True)
         self.last_speech_time = None
         self.phrase_start_time = None
         self.data_queue = Queue()
@@ -577,20 +545,16 @@ class SystemAudioWhisperClient:
         self.last_transcription = ''
         self.is_running = True
         self.is_paused = False
-
+        
         # Start audio capture thread
-        print("DEBUG: Starting audio capture thread...", flush=True)
         self.audio_capture_thread = threading.Thread(target=self._audio_capture_loop, daemon=True)
         self.audio_capture_thread.start()
-
+        
         # Start transcription thread
-        print("DEBUG: Starting transcription thread...", flush=True)
         self.transcription_thread = threading.Thread(target=self._transcription_loop, daemon=True)
         self.transcription_thread.start()
-
-        print("\n" + "="*60, flush=True)
-        print("✓ Transcription service started. Listening to system audio...", flush=True)
-        print("="*60 + "\n", flush=True)
+        
+        print("Transcription service started. Listening to system audio...")
     
     def stop(self, llm_response_array):
         """Stop the transcription service."""

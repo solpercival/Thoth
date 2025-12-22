@@ -15,8 +15,8 @@ import re
 from time import sleep
 from threading import Event
 from typing import Optional, Dict, Any
-from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
-from ollama_client.llm_client import OllamaClient
+from whisper.system_audio_whisper_client import SystemAudioWhisperClient
+from ollama.llm_client import OllamaClient
 from backend.core.call_assistant.tts_client import TTSClient
 from backend.core.email_agent.email_formatter import format_ezaango_shift_data
 from backend.core.email_agent.email_sender import send_notify_email
@@ -96,7 +96,7 @@ User: "I'm feeling sick"
 Your response: <REASON>I'm feeling sick
 """
 
-LLM_MODEL = "qwen3:8b"
+LLM_MODEL = "llama3.1:8b"
 
 class CallAssistantV3:
     """
@@ -473,22 +473,14 @@ class CallAssistantV3:
             stop_event: Threading Event to signal when to stop
         """
         try:
-            print("=" * 60, flush=True)
-            print("DEBUG: run_with_event() called", flush=True)
-            print("DEBUG: Creating SystemAudioWhisperClient...", flush=True)
-            print("=" * 60, flush=True)
-
             self.whisper_client = SystemAudioWhisperClient(
                 model="base",
                 phrase_timeout=5,
                 on_phrase_complete=self.on_phrase_complete
             )
 
-            print("DEBUG: Whisper client created successfully", flush=True)
-            print("DEBUG: Calling whisper_client.start()...", flush=True)
-
             self.whisper_client.start()
-            print("\nVoice Assistant V3 running. Waiting for stop signal.\n", flush=True)
+            print("\nVoice Assistant V3 running. Waiting for stop signal.\n")
 
             while not stop_event.is_set():
                 sleep(0.5)
