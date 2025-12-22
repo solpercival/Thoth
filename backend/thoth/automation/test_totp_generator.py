@@ -10,7 +10,7 @@ Usage:
 """
 import time
 
-from backend.automation.secrets import get_admin_totp_code
+from thoth.automation.secrets import get_admin_totp_code
 
 
 def main():

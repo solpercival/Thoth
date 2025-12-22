@@ -5,6 +5,7 @@ __pycache__/
 .env
 .venv/
 .env.linux
+.claude
 node_modules/
 .bin/
 dist/
