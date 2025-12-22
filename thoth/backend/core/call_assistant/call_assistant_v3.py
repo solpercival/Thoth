@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any
 from whisper.system_audio_whisper_client import SystemAudioWhisperClient
 from ollama.llm_client import OllamaClient
 from backend.core.call_assistant.tts_client import TTSClient
+from backend.core.call_assistant.audio_config import get_audio_source
 from backend.core.email_agent.email_formatter import format_ezaango_shift_data
 from backend.core.email_agent.email_sender import send_notify_email
 from backend.automation.test_integrated_workflow import test_integrated_workflow
@@ -432,17 +433,24 @@ class CallAssistantV3:
         """
         print(f"\n[SPEAKING] {text}\n")
         try:
-            tts_client = TTSClient(output_device_name="CABLE Input")
+            # Use platform-specific device name
+            import platform
+            device_name = "CABLE Input" if platform.system() == "Windows" else "virtual_speaker"
+            tts_client = TTSClient(output_device_name=device_name)
             tts_client.text_to_speech(text)
         except Exception as e:
             print(f"[TTS ERROR] {e}")
 
     def run(self):
         """Start the voice assistant"""
+        # Get production audio source (Jabra Evolve2 on Linux)
+        audio_source = get_audio_source(is_testing=False)
+        
         self.whisper_client = SystemAudioWhisperClient(
             model="base",
             phrase_timeout=5,
-            on_phrase_complete=self.on_phrase_complete
+            on_phrase_complete=self.on_phrase_complete,
+            audio_source=audio_source
         )
 
         try:
@@ -473,10 +481,14 @@ class CallAssistantV3:
             stop_event: Threading Event to signal when to stop
         """
         try:
+            # Get production audio source (Jabra Evolve2 on Linux)
+            audio_source = get_audio_source(is_testing=False)
+            
             self.whisper_client = SystemAudioWhisperClient(
                 model="base",
                 phrase_timeout=5,
-                on_phrase_complete=self.on_phrase_complete
+                on_phrase_complete=self.on_phrase_complete,
+                audio_source=audio_source
             )
 
             self.whisper_client.start()

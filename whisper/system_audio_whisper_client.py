@@ -55,7 +55,7 @@ class SystemAudioWhisperClient:
     """
     def __init__(self, model="medium", non_english=False, energy_threshold=1000,
                  record_timeout=0.5, phrase_timeout=5, on_phrase_complete=None,
-                 silence_threshold=0.01, max_phrase_duration=15):
+                 silence_threshold=0.01, max_phrase_duration=15, audio_source=None):
         """
         Initialize the transcription service.
         
@@ -68,6 +68,8 @@ class SystemAudioWhisperClient:
             on_phrase_complete: Callback function(text) called when a phrase is complete
             silence_threshold: Audio level below this is considered silence (0-1 range), increase if ends to early, vice versa
             max_phrase_duration: Maximum duration in seconds before forcing phrase completion (default: 30)
+            audio_source: Specific audio source name to use (Linux only). If None, uses auto-detection.
+                         Examples: 'virtual_speaker.monitor', 'alsa_output.usb-GN_Audio_A_S_Jabra_Evolve2_30*.monitor'
         """
         self.model_name = model
         self.non_english = non_english
@@ -77,6 +79,7 @@ class SystemAudioWhisperClient:
         self.max_phrase_duration = max_phrase_duration
         self.on_phrase_complete = on_phrase_complete
         self.silence_threshold = silence_threshold
+        self.audio_source = audio_source  # Fixed audio source (no dynamic switching)
         
         # State variables
         self.last_speech_time = None
@@ -131,39 +134,43 @@ class SystemAudioWhisperClient:
                 raise
         
         elif system == "Linux":
-            # Find any active audio source in PyAudio
+            # Fixed source strategy - use specified source or Jabra as default for production
             import subprocess
             
-            # Get list of all sources and find the first RUNNING one, otherwise IDLE
-            result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
-                                capture_output=True, text=True)
+            selected_source = None
             
-            active_source = None
-            idle_source = None
-            
-            for line in result.stdout.strip().split('\n'):
-                if not line or line.startswith('#'):
-                    continue
-                    
-                parts = line.split()
-                if len(parts) >= 5:
-                    source_name = parts[1]
-                    status = parts[4] if len(parts) > 4 else ''
-                    
-                    # Prioritize RUNNING sources (actively capturing audio)
-                    if 'RUNNING' in status:
-                        active_source = source_name
-                        print(f"Found RUNNING audio source: {source_name}")
-                        break
-                    # Keep track of first IDLE source as backup
-                    elif 'IDLE' in status and idle_source is None:
-                        idle_source = source_name
-            
-            # Use running source, or fall back to idle, or use default
-            selected_source = active_source or idle_source
+            # If audio_source is specified, use it directly
+            if self.audio_source:
+                print(f"Using specified audio source: {self.audio_source}")
+                selected_source = self.audio_source
+            else:
+                # Default strategy: Look for Jabra Evolve2 monitor for production calls
+                result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
+                                    capture_output=True, text=True)
+                
+                jabra_source = None
+                
+                for line in result.stdout.strip().split('\n'):
+                    if not line or line.startswith('#'):
+                        continue
+                        
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        source_name = parts[1]
+                        
+                        # Look for Jabra Evolve2 monitor (production audio)
+                        if 'jabra' in source_name.lower() and 'evolve2' in source_name.lower() and 'monitor' in source_name.lower():
+                            jabra_source = source_name
+                            print(f"Found Jabra Evolve2 audio source: {source_name}")
+                            break
+                
+                selected_source = jabra_source
+                
+                if not selected_source:
+                    print("⚠️  Jabra Evolve2 not found, using system default")
             
             if selected_source:
-                print(f"Using audio source: {selected_source}")
+                print(f"Setting audio source: {selected_source}")
                 subprocess.run(['pactl', 'set-default-source', selected_source])
                 os.environ['PULSE_SOURCE'] = selected_source
                 self.current_source = selected_source
@@ -171,7 +178,7 @@ class SystemAudioWhisperClient:
                 # Get actual channel count and sample rate from the source
                 self._update_source_info(selected_source)
             else:
-                print("No active audio source found, using system default")
+                print("Using system default audio source")
                 self.current_source = None
             
             # Find the 'pulse' device in PyAudio
@@ -240,57 +247,6 @@ class SystemAudioWhisperClient:
             self.source_channels = 2
             self.source_sample_rate = 44100
     
-    def _check_and_switch_source(self):
-        """Check for RUNNING audio sources and switch if needed (Linux only)"""
-        if platform.system() != "Linux":
-            return False
-            
-        import subprocess
-        import time
-        
-        # Only check every 3 seconds to avoid excessive system calls
-        current_time = time.time()
-        if current_time - self.last_source_check < 3:
-            return False
-        
-        self.last_source_check = current_time
-        
-        try:
-            result = subprocess.run(['pactl', 'list', 'sources', 'short'], 
-                                capture_output=True, text=True, timeout=1)
-            
-            for line in result.stdout.strip().split('\n'):
-                if not line or line.startswith('#'):
-                    continue
-                    
-                parts = line.split()
-                if len(parts) >= 5:
-                    source_name = parts[1]
-                    status = parts[4] if len(parts) > 4 else ''
-                    
-                    # If we find a RUNNING source and it's different from current
-                    if 'RUNNING' in status and source_name != self.current_source:
-                        print(f"\n🔄 Switching to active audio source: {source_name}")
-                        subprocess.run(['pactl', 'set-default-source', source_name])
-                        os.environ['PULSE_SOURCE'] = source_name
-                        self.current_source = source_name
-                        
-                        # Update source info (channels and sample rate)
-                        self._update_source_info(source_name)
-                        
-                        # Close and reopen stream with new source
-                        if self.stream:
-                            self.stream.stop_stream()
-                            self.stream.close()
-                        
-                        # Reopen with same settings
-                        self._open_audio_stream()
-                        return True
-        except Exception as e:
-            print(f"Error checking audio sources: {e}")
-        
-        return False
-    
     def _open_audio_stream(self):
         """Open the audio stream with current device settings"""
         # On Linux with pulse device, use actual source channels
@@ -321,9 +277,6 @@ class SystemAudioWhisperClient:
             self._open_audio_stream()
             
             while self.is_running:
-                # Check for active audio sources and switch if needed
-                self._check_and_switch_source()
-                
                 # Get current stream settings (use actual source channels)
                 if platform.system() == "Linux" and self.device_info["name"] == "pulse":
                     channels = self.source_channels
@@ -331,6 +284,7 @@ class SystemAudioWhisperClient:
                 else:
                     channels = int(self.device_info["maxInputChannels"])
                     source_rate = int(self.device_info["defaultSampleRate"])
+                    
                 # Only capture audio if not paused
                 if not self.is_paused:
                     # Read audio data
