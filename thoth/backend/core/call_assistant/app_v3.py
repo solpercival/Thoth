@@ -25,9 +25,15 @@ active_sessions = {}
 @app.route('/webhook/call-started', methods=['POST'])
 def call_started():
     """Webhook endpoint triggered when a call starts"""
+    print("\n" + "=" * 60, flush=True)
+    print("DEBUG: /webhook/call-started endpoint called", flush=True)
+    print("=" * 60, flush=True)
+
     data = request.json
     call_id = data.get('call_id')
     caller_phone = data.get('from')  # Extract caller phone number
+
+    print(f"DEBUG: call_id={call_id}, caller_phone={caller_phone}", flush=True)
 
     if not call_id:
         return jsonify({'error': 'call_id required'}), 400
@@ -35,11 +41,13 @@ def call_started():
     if call_id in active_sessions:
         return jsonify({'status': 'already running'}), 200
 
+    print("DEBUG: Creating CallAssistantV3 instance...", flush=True)
     # Use V3 assistant with LLM-driven conversation flow
     assistant = CallAssistantV3(caller_phone=caller_phone)
     stop_event = Event()
 
     def run_assistant():
+        print("DEBUG: run_assistant thread started", flush=True)
         try:
             assistant.run_with_event(stop_event)
         except Exception as e:
@@ -52,12 +60,14 @@ def call_started():
             if call_id in active_sessions:
                 del active_sessions[call_id]
 
-            os.system("cls" if os.name == "nt" else "clear")
+            # os.system("cls" if os.name == "nt" else "clear")  # Disabled during debugging
             print(f"Session removed. Active sessions: {len(active_sessions)}")
 
     # Use daemon=True to prevent blocking Flask shutdown
+    print("DEBUG: Creating and starting assistant thread...", flush=True)
     thread = Thread(target=run_assistant, daemon=True)
     thread.start()
+    print("DEBUG: Thread started successfully", flush=True)
 
     active_sessions[call_id] = {
         'assistant': assistant,

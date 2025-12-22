@@ -28,7 +28,7 @@ thoth_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.insert(0, project_root)
 sys.path.insert(0, thoth_root)
 
-from ollama.llm_client import OllamaClient
+from ollama_client.llm_client import OllamaClient
 from backend.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 
 
