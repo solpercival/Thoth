@@ -12,6 +12,8 @@ const IPC_CHANNELS = {
   BACKEND_STATUS: 'backend:status',
   BACKEND_ERROR: 'backend:error',
   BACKEND_LOG: 'backend:log',
+  START_APP: 'app:start',
+  STOP_APP: 'app:stop',
   API_REQUEST: 'api:request',
   APP_QUIT: 'app:quit',
   SHOW_ERROR: 'app:show-error',
@@ -23,6 +25,9 @@ const electronAPI = {
   startBackend: () => ipcRenderer.invoke(IPC_CHANNELS.START_BACKEND),
   stopBackend: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_BACKEND),
   getBackendStatus: () => ipcRenderer.invoke(IPC_CHANNELS.BACKEND_STATUS),
+  // Start/stop named apps (e.g., 'call_assistant_v3', 'odin')
+  startApp: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.START_APP, name),
+  stopApp: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.STOP_APP, name),
 
   // API requests
   apiRequest: (method: string, endpoint: string, data?: any) =>

@@ -13,6 +13,8 @@ declare global {
       getBackendStatus: () => Promise<BackendStatus>;
       removeBackendErrorListener: () => void;
       apiRequest: (method: string, endpoint: string, data?: any) => Promise<ApiResponse>;
+      startApp: (name: string) => Promise<boolean>;
+      stopApp: (name: string) => Promise<boolean>;
     };
   }
 }
@@ -26,6 +28,7 @@ interface ApiResponse {
 interface BackendStatus {
   running: boolean;
   url: string;
+  apps?: { [name: string]: boolean };
 }
 
 export function useBackend() {
@@ -49,6 +52,19 @@ export function useBackend() {
         // Get backend status
         const backendStatus = await window.electron.getBackendStatus();
         setStatus(backendStatus);
+
+        // Poll for status updates every 2s
+        const poll = setInterval(async () => {
+          try {
+            const s = await window.electron!.getBackendStatus();
+            setStatus(s);
+          } catch (e) {
+            // ignore polling errors
+          }
+        }, 2000);
+
+        // save poll id to cleanup
+        (initialize as any)._pollId = poll;
       } catch (err) {
         setError(String(err));
       }
@@ -60,6 +76,8 @@ export function useBackend() {
     return () => {
       if (window.electron) {
         window.electron.removeBackendErrorListener();
+        const pollId = (initialize as any)._pollId;
+        if (pollId) clearInterval(pollId);
       }
     };
   }, []);

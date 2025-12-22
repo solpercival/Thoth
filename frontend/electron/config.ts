@@ -45,6 +45,9 @@ export const CONFIG = {
     BACKEND_STATUS: 'backend:status',
     BACKEND_ERROR: 'backend:error',
     BACKEND_LOG: 'backend:log',
+    // App control (start/stop named apps)
+    START_APP: 'app:start',
+    STOP_APP: 'app:stop',
 
     // API requests
     API_REQUEST: 'api:request',

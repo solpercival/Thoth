@@ -19,6 +19,12 @@ app = Flask(__name__)
 active_sessions = {}
 
 
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint for Electron app startup verification"""
+    return jsonify({'status': 'ok'}), 200
+
+
 @app.route('/webhook/call-started', methods=['POST'])
 def call_started():
     """Webhook endpoint triggered when a call starts"""
