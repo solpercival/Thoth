@@ -4,3 +4,7 @@ __pycache__/
 .sessions/*.json
 .env
 .venv/
+node_modules/
+dist/
+build/
+.bin/
