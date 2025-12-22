@@ -4,7 +4,10 @@ __pycache__/
 .sessions/*.json
 .env
 .venv/
+.env.linux
+.claude
 node_modules/
+.bin/
 dist/
 build/
 *.log
