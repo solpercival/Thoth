@@ -1,0 +1,63 @@
+/**
+ * Preload script
+ * Exposes secure IPC bridge to renderer process
+ */
+
+import { contextBridge, ipcRenderer } from 'electron';
+
+// IPC channel names (inlined to avoid import issues in preload context)
+const IPC_CHANNELS = {
+  START_BACKEND: 'backend:start',
+  STOP_BACKEND: 'backend:stop',
+  BACKEND_STATUS: 'backend:status',
+  BACKEND_ERROR: 'backend:error',
+  BACKEND_LOG: 'backend:log',
+  API_REQUEST: 'api:request',
+  APP_QUIT: 'app:quit',
+  SHOW_ERROR: 'app:show-error',
+};
+
+// Define the IPC bridge API
+const electronAPI = {
+  // Backend control
+  startBackend: () => ipcRenderer.invoke(IPC_CHANNELS.START_BACKEND),
+  stopBackend: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_BACKEND),
+  getBackendStatus: () => ipcRenderer.invoke(IPC_CHANNELS.BACKEND_STATUS),
+
+  // API requests
+  apiRequest: (method: string, endpoint: string, data?: any) =>
+    ipcRenderer.invoke(IPC_CHANNELS.API_REQUEST, { method, endpoint, data }),
+
+  // App control
+  quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.APP_QUIT),
+  showError: (title: string, message: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHOW_ERROR, { title, message }),
+
+  // Listen for backend events
+  onBackendLog: (callback: (message: string) => void) =>
+    ipcRenderer.on(IPC_CHANNELS.BACKEND_LOG, (event, message) =>
+      callback(message)
+    ),
+  onBackendError: (callback: (error: string) => void) =>
+    ipcRenderer.on(IPC_CHANNELS.BACKEND_ERROR, (event, error) =>
+      callback(error)
+    ),
+
+  // Remove listeners
+  removeBackendLogListener: () =>
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.BACKEND_LOG),
+  removeBackendErrorListener: () =>
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.BACKEND_ERROR),
+};
+
+// Expose to renderer via window.electron
+contextBridge.exposeInMainWorld('electron', electronAPI);
+
+// Type definition for TypeScript
+declare global {
+  interface Window {
+    electron: typeof electronAPI;
+  }
+}
+
+export {};
