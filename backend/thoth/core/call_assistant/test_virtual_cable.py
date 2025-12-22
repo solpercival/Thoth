@@ -5,16 +5,13 @@ This will list all audio devices and test playing to CABLE Input.
 import sys
 from pathlib import Path
 
-# Add project root to Python path
-# Files are at: Thoth/thoth/backend/core/call_assistant/
-# Need to add both Thoth/ (for whisper/, ollama/) and Thoth/thoth/ (for backend/)
-project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
-thoth_root = project_root / "thoth"
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(thoth_root))
+# Add backend root to Python path
+# test_virtual_cable.py is at: backend/thoth/core/call_assistant/test_virtual_cable.py
+backend_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(backend_root))
 
 import pyaudio
-from backend.core.call_assistant.tts_client import TTSClient
+from thoth.core.call_assistant.tts_client import TTSClient
 
 
 def list_audio_devices():
