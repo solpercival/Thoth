@@ -2,7 +2,7 @@ import argparse
 import os
 import numpy as np
 import speech_recognition as sr
-import whisper
+import whisper_client
 import torch
 import threading
 
@@ -88,7 +88,7 @@ class WhisperClient:
         if self.model_name != "large" and not self.non_english:
             model = model + ".en"
         print(f"Loading Whisper model: {model}")
-        self.audio_model = whisper.load_model(model)
+        self.audio_model = whisper_client.load_model(model)
         print("Model loaded.")
         
         # Adjust for ambient noise
