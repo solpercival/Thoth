@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from backend.odin.screening_agent.screening_agent import ScreeningAgent
 
 # Fix import paths
 backend_root = Path(__file__).resolve().parent.parent
@@ -8,6 +9,8 @@ sys.path.insert(0, str(backend_root))
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+
+screening_agents = {}
 
 
 @app.route('/')
@@ -22,6 +25,15 @@ def call_started():
     call_id = data.get('call_id')
     caller_phone = data.get('from')
 
+    # Start the screening agent and add it into a dictionary
+    # NOTE: Agent runs in a non blocking thread
+    screening_agent:ScreeningAgent = ScreeningAgent(call_id, caller_phone)
+    screening_agent.start()
+
+    screening_agents[caller_phone] = screening_agent
+
+
+
     return jsonify({
         'status': 'success',
         'message': 'Call started webhook received',
@@ -35,6 +47,12 @@ def call_ended():
     """Webhook endpoint triggered when a call ends"""
     data = request.json
     call_id = data.get('call_id')
+    caller_phone = data.get('from')
+
+    # End the agent
+    agent: ScreeningAgent = screening_agents[caller_phone]
+    agent.stop()
+
 
     return jsonify({
         'status': 'success',
