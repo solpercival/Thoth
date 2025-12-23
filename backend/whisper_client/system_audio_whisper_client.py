@@ -53,7 +53,7 @@ class SystemAudioWhisperClient:
     client.resume() - resume transcription
     client.stop() - stop transcribing
     """
-    def __init__(self, model="medium", non_english=False, energy_threshold=1000,
+    def __init__(self, model="base", non_english=False, energy_threshold=1000,
                  record_timeout=0.5, phrase_timeout=5, on_phrase_complete=None,
                  silence_threshold=0.01, max_phrase_duration=15):
         """

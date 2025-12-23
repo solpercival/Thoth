@@ -47,8 +47,8 @@ def diagnose():
     print("\n[2] OLLAMA SERVER CONNECTIVITY")
     print("-" * 80)
     try:
-        import ollama
-        client = ollama.Client(host="http://localhost:11434")
+        import ollama_client
+        client = ollama_client.Client(host="http://localhost:11434")
         models = client.list()
         print("[OK] Ollama server is reachable at http://localhost:11434")
         print(f"[OK] Available models: {len(models.get('models', []))} found")
