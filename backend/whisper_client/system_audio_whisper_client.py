@@ -229,7 +229,7 @@ class SystemAudioWhisperClient:
         print("DEBUG: Getting system audio device...", flush=True)
         self.pyaudio_instance, self.device_info = self._get_system_audio_device()
 
-        print(f"\n✓ Using audio device: {self.device_info['name']}", flush=True)
+        print(f"\n[OK] Using audio device: {self.device_info['name']}", flush=True)
 
         # Load Whisper model
         model = self.model_name
@@ -237,7 +237,7 @@ class SystemAudioWhisperClient:
             model = model + ".en"
         print(f"\nDEBUG: Loading Whisper model '{model}'... (this may take a moment)", flush=True)
         self.audio_model = whisper.load_model(model)
-        print("✓ Whisper model loaded successfully\n", flush=True)
+        print("[OK] Whisper model loaded successfully\n", flush=True)
     
     def _update_source_info(self, source_name):
         """Get channel count and sample rate from PulseAudio source"""

@@ -1,3 +1,5 @@
+/// <reference types="react-scripts" />
+
 /**
  * Type definitions for window.electron API
  * Exposed by preload.ts via contextBridge

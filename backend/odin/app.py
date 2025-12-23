@@ -1,17 +1,14 @@
 import sys
 from pathlib import Path
 
-# Add backend root to Python path
-# app_v3.py is at: backend/thoth/core/call_assistant/app_v3.py
-backend_root = Path(__file__).resolve().parent.parent.parent.parent
+# Fix import paths
+backend_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_root))
-
 
 from flask import Flask, request, jsonify
 from threading import Thread, Event
 from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 import time
-import os
 
 app = Flask(__name__)
 
@@ -25,18 +22,23 @@ def health():
     return jsonify({'status': 'ok'}), 200
 
 
+@app.route('/')
+def home():
+    return "Hello World"
+
+
 @app.route('/webhook/call-started', methods=['POST'])
 def call_started():
     """Webhook endpoint triggered when a call starts"""
-    print("\n" + "=" * 60)
-    print("DEBUG: /webhook/call-started endpoint called")
-    print("=" * 60)
+    print("\n" + "=" * 60, flush=True)
+    print("DEBUG: /webhook/call-started endpoint called", flush=True)
+    print("=" * 60, flush=True)
 
     data = request.json
     call_id = data.get('call_id')
     caller_phone = data.get('from')  # Extract caller phone number
 
-    print(f"DEBUG: call_id={call_id}, caller_phone={caller_phone}")
+    print(f"DEBUG: call_id={call_id}, caller_phone={caller_phone}", flush=True)
 
     if not call_id:
         return jsonify({'error': 'call_id required'}), 400
@@ -44,13 +46,13 @@ def call_started():
     if call_id in active_sessions:
         return jsonify({'status': 'already running'}), 200
 
-    print("DEBUG: Creating CallAssistantV3 instance...")
+    print("DEBUG: Creating CallAssistantV3 instance...", flush=True)
     # Use V3 assistant with LLM-driven conversation flow
     assistant = CallAssistantV3(caller_phone=caller_phone)
     stop_event = Event()
 
     def run_assistant():
-        print("DEBUG: run_assistant thread started")
+        print("DEBUG: run_assistant thread started", flush=True)
         try:
             assistant.run_with_event(stop_event)
         except Exception as e:
@@ -67,10 +69,10 @@ def call_started():
             print(f"Session removed. Active sessions: {len(active_sessions)}")
 
     # Use daemon=True to prevent blocking Flask shutdown
-    print("DEBUG: Creating and starting assistant thread...")
+    print("DEBUG: Creating and starting assistant thread...", flush=True)
     thread = Thread(target=run_assistant, daemon=True)
     thread.start()
-    print("DEBUG: Thread started successfully")
+    print("DEBUG: Thread started successfully", flush=True)
 
     active_sessions[call_id] = {
         'assistant': assistant,
@@ -132,7 +134,7 @@ def status():
     }), 200
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Add shutdown handler
     try:
         print("=" * 60)
