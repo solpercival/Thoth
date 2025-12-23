@@ -46,10 +46,10 @@ export class BackendManager extends EventEmitter {
         // Prefer env var, then common venv locations, then 'python'
         let pythonExe = process.env.PYTHON_EXE || 'python';
         const _candidates = [
+          path.join(process.cwd(), '..', 'venv', 'Scripts', 'python.exe'),
           path.join(process.cwd(), 'venv', 'Scripts', 'python.exe'),
-          path.join(process.cwd(), 'venv', 'bin', 'python'),
           path.join(__dirname, '..', '..', 'venv', 'Scripts', 'python.exe'),
-          path.join(__dirname, '..', '..', 'venv', 'bin', 'python'),
+          path.join(__dirname, '..', '..', '..', 'venv', 'Scripts', 'python.exe'),
         ];
         for (const c of _candidates) {
           try {
@@ -438,29 +438,38 @@ export class BackendManager extends EventEmitter {
    */
   async stop(): Promise<void> {
     if (!this.process) {
+      this.isRunning = false;
       return;
     }
 
     return new Promise((resolve) => {
       if (this.process) {
+        const proc = this.process;
+        
         // Try graceful shutdown first
-        this.process.on('exit', () => {
+        const exitHandler = () => {
           this.isRunning = false;
           this.process = null;
           console.log('Backend stopped');
           resolve();
-        });
+        };
+        
+        proc.on('exit', exitHandler);
 
         // Kill the process
-        this.process.kill();
+        proc.kill();
 
         // Force kill after 5 seconds if still running
         setTimeout(() => {
-          if (this.process) {
-            this.process.kill('SIGKILL');
+          if (this.process === proc) {
+            proc.kill('SIGKILL');
           }
+          this.isRunning = false;
+          this.process = null;
           resolve();
         }, 5000);
+      } else {
+        resolve();
       }
     });
   }

@@ -125,20 +125,8 @@ async function initializeApp(): Promise<void> {
     console.log('Running without system tray icon');
   }
 
-  // Start backend automatically (optional for now)
-  try {
-    const backend = getBackendManager();
-    const started = await backend.start();
-
-    if (!started) {
-      console.log('Backend failed to start - you can start it manually from the UI');
-      // Don't show error dialog, just log it
-    } else {
-      console.log('Backend started successfully');
-    }
-  } catch (error) {
-    console.log('Backend startup error (non-fatal):', error);
-  }
+  // Don't start backend automatically - let user control via button
+  console.log('Backend will be started manually via UI button');
 }
 
 /**
