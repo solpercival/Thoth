@@ -11,7 +11,7 @@ frontend/
 ├── electron/          # Electron main process
 │   ├── main.ts       # Application entry point
 │   ├── backend.ts    # Python backend manager
-│   ├── config.ts     # Configuration
+│   ├── config.ts     # Configurationgi
 │   ├── preload.ts    # IPC bridge
 │   └── tray.ts       # System tray
 ├── src/              # React application
