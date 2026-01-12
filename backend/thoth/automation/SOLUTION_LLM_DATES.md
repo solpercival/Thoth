@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-The LLM is falling back to default dates when the **system date** on the other machine doesn't match your reference machine. The system prompt includes context about "today's date," and if it's wrong, the LLM gets confused.
+The LLM is falling back to default dates when the **system date** on the other machine doesn't match reference machine. The system prompt includes context about "today's date," and if it's wrong, the LLM gets confused.
 
 **Quick Fix for Testing on Another Machine:**
 ```powershell

@@ -47,12 +47,17 @@ const electronAPI = {
     ipcRenderer.on(IPC_CHANNELS.BACKEND_ERROR, (event, error) =>
       callback(error)
     ),
-
+  onBackendStatusChange: (callback: (status: any) => void) =>
+    ipcRenderer.on(IPC_CHANNELS.BACKEND_STATUS, (event, status) =>
+      callback(status)
+    ),
   // Remove listeners
   removeBackendLogListener: () =>
     ipcRenderer.removeAllListeners(IPC_CHANNELS.BACKEND_LOG),
   removeBackendErrorListener: () =>
     ipcRenderer.removeAllListeners(IPC_CHANNELS.BACKEND_ERROR),
+  removeBackendStatusChangeListener: () =>
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.BACKEND_STATUS),
 };
 
 // Expose to renderer via window.electron
