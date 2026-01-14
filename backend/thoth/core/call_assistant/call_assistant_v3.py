@@ -98,6 +98,10 @@ User: "I'm feeling sick"
 Your response: <REASON>I'm feeling sick
 """
 
+OPENING_PROMPT = "Hello. Thank you for calling Help at Hands Support. How can I help you today?"
+
+PROCESSING_PROMPT = "I'll look into that. Please wait."
+
 LLM_MODEL = "qwen3:8b"
 
 class CallAssistantV3:
@@ -136,6 +140,7 @@ class CallAssistantV3:
             phrase: Transcribed user speech
         """
         #TODO: Play TTS saying "Just a minute", "Let me work on that for abit", "Hold on a sec", etc
+        #self._speak(PROCESSING_PROMPT)
 
 
         print(f"\n{'='*50}")
@@ -511,9 +516,9 @@ class CallAssistantV3:
             stop_event: Threading Event to signal when to stop
         """
         try:
+            
             print("=" * 60, flush=True)
             print("DEBUG: run_with_event() called", flush=True)
-            print("DEBUG: Creating SystemAudioWhisperClient...", flush=True)
             print("=" * 60, flush=True)
 
             self.whisper_client = SystemAudioWhisperClient(
@@ -522,7 +527,12 @@ class CallAssistantV3:
                 on_phrase_complete=self.on_phrase_complete
             )
 
-            print("DEBUG: Whisper client created successfully", flush=True)
+
+            # Say the opening prompt
+            self._speak(OPENING_PROMPT)
+
+
+
             print("DEBUG: Calling whisper_client.start()...", flush=True)
 
             self.whisper_client.start()

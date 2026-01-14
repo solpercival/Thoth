@@ -14,7 +14,7 @@ import os
 import uuid
 
 
-RING_DURATION = 1.0
+ESTABLISH_DELAY = 1.0
 EXTENSION = "0147"
 
 app = Flask(__name__)
@@ -54,11 +54,11 @@ def call_started():
     
     from thoth.core.call_assistant.call_flow_client import auto_answer_incoming_call
     
-    time.sleep(RING_DURATION)
     
     answer_success = auto_answer_incoming_call(EXTENSION, caller_phone)
     
     if answer_success:
+        time.sleep(ESTABLISH_DELAY)  # Allow 3CX top fully establish the connection before doing anything
         print("✅ Call answered successfully via API")
     else:
         print("⚠️ Failed to auto-answer call (will continue anyway)")
@@ -154,15 +154,11 @@ if __name__ == '__main__':
     try:
         print("=" * 60)
         print("Starting Flask app with CallAssistantV3")
-        print("LLM-driven conversation flow - no state machine!")
         print("=" * 60)
         print("\nEndpoints:")
         print("  GET/POST /webhook/call-started - Start a call session")
         print("  GET/POST /webhook/call-ended - End a call session")
         print("  GET /status - View active sessions")
-        print("\nSupports both:")
-        print("  - Custom URL (GET with query params)")
-        print("  - CFD (POST with JSON body)")
         print("\nServer running on http://localhost:5000\n")
         print("=" * 60 + "\n")
 
