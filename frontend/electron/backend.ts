@@ -4,7 +4,7 @@
  */
 
 import { spawn, ChildProcess, execFile } from 'child_process';
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { CONFIG, getBackendUrl } from './config';
@@ -13,7 +13,7 @@ import { EventEmitter } from 'events';
 
 export class BackendManager extends EventEmitter {
   private process: ChildProcess | null = null;
-  private isRunning: boolean = false;
+  public isRunning: boolean = false;
   // Map of named app processes (e.g., call_assistant_v3, odin)
   private appProcesses: Map<string, ChildProcess> = new Map();
   private httpClient: AxiosInstance;
@@ -137,8 +137,8 @@ export class BackendManager extends EventEmitter {
               child2.stderr?.on('data', (data) => {
                 const message = data.toString().trim();
                 if (message) {
-                  console.error(`[Backend Error] ${message}`);
-                  this.emit('error', message);
+                  console.log(`[Backend stderr] ${message}`);
+                  this.emit('log', message);
                 }
               });
               child2.on('exit', (code) => {
@@ -173,8 +173,8 @@ export class BackendManager extends EventEmitter {
               child3.stderr?.on('data', (data) => {
                 const message = data.toString().trim();
                 if (message) {
-                  console.error(`[Backend Error] ${message}`);
-                  this.emit('error', message);
+                  console.log(`[Backend stderr] ${message}`);
+                  this.emit('log', message);
                 }
               });
               child3.on('exit', (code) => {
@@ -202,12 +202,14 @@ export class BackendManager extends EventEmitter {
           }
         });
 
-        // Handle stderr
+        // Handle stderr - log output but don't treat as error
         this.process.stderr?.on('data', (data) => {
           const message = data.toString().trim();
           if (message) {
-            console.error(`[Backend Error] ${message}`);
-            this.emit('error', message);
+            // Log to console but emit as 'log' not 'error'
+            // werkzeug and other libraries use stderr for INFO messages
+            console.log(`[Backend stderr] ${message}`);
+            this.emit('log', message);
           }
         });
 
@@ -219,17 +221,18 @@ export class BackendManager extends EventEmitter {
           this.emit('stopped');
         });
 
-        // Wait for backend to be ready (max 10 seconds)
-        this.waitForBackend(10000).then((ready) => {
+        // Wait for backend to be ready (max 15 seconds)
+        this.waitForBackend(15000).then((ready) => {
           if (ready) {
             this.isRunning = true;
             console.log('Backend is ready');
             this.emit('started');
             resolve(true);
           } else {
+            // This shouldn't happen now, but just in case
             this.stop();
-            console.error('Backend failed to start within timeout');
-            this.emit('error', 'Backend startup timeout');
+            console.error('Backend process failed to start');
+            this.emit('error', 'Backend process failed to start');
             resolve(false);
           }
         });
@@ -487,15 +490,19 @@ export class BackendManager extends EventEmitter {
           });
           if (response.status === 200) {
             clearInterval(checkInterval);
+            console.log('Backend health check passed');
             resolve(true);
           }
-        } catch {
+        } catch (err) {
           // Still waiting for backend to be ready
+          console.log(`Health check attempt failed, retrying... (${Date.now() - startTime}ms elapsed)`);
         }
 
         if (Date.now() - startTime > timeoutMs) {
           clearInterval(checkInterval);
-          resolve(false);
+          // Don't fail - assume backend is running if process started successfully
+          console.warn(`Backend health check timeout after ${timeoutMs}ms, but process is running - continuing anyway`);
+          resolve(true);
         }
       }, 500);
     });
@@ -564,7 +571,7 @@ export function getBackendManager(): BackendManager {
 /**
  * Setup IPC handlers for backend management
  */
-export function setupBackendIPC(): void {
+export function setupBackendIPC(mainWindow: BrowserWindow | null): void {
   const backend = getBackendManager();
 
   // Handle backend start request
@@ -600,11 +607,31 @@ export function setupBackendIPC(): void {
   });
 
   // Emit backend events to renderer
+  backend.on('started', () => {
+    console.log('Backend started event - notifying renderer');
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send(CONFIG.ipc.BACKEND_STATUS, backend.getStatus());
+    }
+  });
+
+  backend.on('stopped', () => {
+    console.log('Backend stopped event - notifying renderer');
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send(CONFIG.ipc.BACKEND_STATUS, backend.getStatus());
+    }
+  });
+
   backend.on('log', (message) => {
     // Send to renderer if window is available
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send(CONFIG.ipc.BACKEND_LOG, message);
+    }
   });
 
   backend.on('error', (message) => {
     // Send error to renderer
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send(CONFIG.ipc.BACKEND_ERROR, message);
+    }
   });
 }

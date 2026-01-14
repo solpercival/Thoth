@@ -8,6 +8,15 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Listen for backend status changes
+    if (window.electron?.onBackendStatusChange) {
+      window.electron.onBackendStatusChange((status: any) => {
+        console.log('Backend status updated:', status);
+        setIsRunning(status.isRunning || false);
+        setStatus(status.isRunning ? 'Running' : 'Stopped');
+      });
+    }
+
     // Listen for backend errors if electron API is available
     if (window.electron?.onBackendError) {
       window.electron.onBackendError((err: string) => {
@@ -16,6 +25,21 @@ function App() {
         setStatus('Error');
       });
     }
+
+    // Initial status check
+    if (window.electron?.getBackendStatus) {
+      window.electron.getBackendStatus().then((status: any) => {
+        console.log('Initial backend status:', status);
+        setIsRunning(status.isRunning || false);
+        setStatus(status.isRunning ? 'Running' : 'Stopped');
+      });
+    }
+
+    return () => {
+      if (window.electron?.removeBackendStatusChangeListener) {
+        window.electron.removeBackendStatusChangeListener();
+      }
+    };
   }, []);
 
   const handleToggle = async () => {

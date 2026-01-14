@@ -16,6 +16,7 @@ import { getBackendManager, setupBackendIPC } from './backend';
 import { createTray } from './tray';
 
 let mainWindow: BrowserWindow | null = null;
+let backendScheduler: NodeJS.Timeout | null = null;
 
 /**
  * Create the main application window
@@ -111,22 +112,69 @@ function createMenu(): void {
 }
 
 /**
+ * Start the backend scheduler that checks for 11am daily
+ */
+function startBackendScheduler(): void {
+  if (backendScheduler) {
+    clearInterval(backendScheduler);
+  }
+
+  const checkAndStartBackend = async () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    
+    // Log the current time every minute for debugging
+    console.log(`[Scheduler Check] Current time: ${now.toLocaleTimeString()} (Hour: ${hours}, Minute: ${minutes})`);
+
+    // Check if current time is between 17:00 PM and 17:59 PM
+    if (hours == 17 && minutes >= 0 && minutes < 60) {
+      const backend = getBackendManager();
+      
+      // Only start if not already running
+      if (!backend.isRunning) {
+        console.log(`[${now.toLocaleTimeString()}] ✓ Time is 17:00 and backend not running - Starting backend...`);
+        try {
+          await backend.start();
+          console.log(`[${now.toLocaleTimeString()}] Backend started successfully`);
+        } catch (error) {
+          console.error(`[${now.toLocaleTimeString()}] Failed to start backend:`, error);
+        }
+      } else {
+        console.log(`[${now.toLocaleTimeString()}] Time is 11am but backend already running`);
+      }
+    }
+  };
+
+  // Check every minute for 17:00
+  backendScheduler = setInterval(checkAndStartBackend, 60000);
+  
+  // Also check immediately in case it's already 17:00
+  checkAndStartBackend();
+
+  console.log('Backend scheduler started - will start backend at 11:00 AM daily');
+}
+
+/**
  * Initialize the application
  */
 async function initializeApp(): Promise<void> {
-  // Setup IPC handlers for backend management
-  setupBackendIPC();
-
-  // Create main window
+  // Create main window first
   mainWindow = createWindow();
+  
+  // Setup IPC handlers for backend management
+  setupBackendIPC(mainWindow);
+
   createMenu();
   const trayIcon = createTray(mainWindow);
   if (!trayIcon) {
     console.log('Running without system tray icon');
   }
 
-  // Don't start backend automatically - let user control via button
-  console.log('Backend will be started manually via UI button');
+  // Start the backend scheduler - will auto-start at 17:00
+  startBackendScheduler();
+  
+  console.log('Electron app initialized - Backend will start automatically at 17:00 PM');
 }
 
 /**
@@ -139,14 +187,15 @@ app.on('ready', () => {
 });
 
 // Quit when all windows are closed
+// On Windows/Linux, keep app running to maintain 5pm scheduler
 app.on('window-all-closed', async () => {
-  const backend = getBackendManager();
-  await backend.stop();
-
-  // On macOS, apps stay active until the user quits explicitly
-  if (process.platform !== 'darwin') {
+  // Don't quit - keep the app running in background
+  // The scheduler will continue to run at 5pm
+  if (process.platform === 'darwin') {
+    // Only auto-quit on macOS if user explicitly quits
     app.quit();
   }
+  // On Windows/Linux, the app stays running
 });
 
 // On macOS, re-create window when dock icon is clicked
