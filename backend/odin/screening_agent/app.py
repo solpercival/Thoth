@@ -1,3 +1,8 @@
+# HOW TO RUN:
+# 1. cd to root
+# 2. Run python -m backend.screening_agent.app
+
+
 import sys
 from pathlib import Path
 from backend.odin.screening_agent.screening_agent import ScreeningAgent

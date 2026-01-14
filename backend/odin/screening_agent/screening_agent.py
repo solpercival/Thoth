@@ -1,3 +1,4 @@
+from pathlib import Path
 from backend.whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
 from backend.thoth.core.call_assistant.tts_client import TTSClient
 import threading
@@ -10,6 +11,12 @@ class ScreeningAgent:
     A screening agent that conducts automated interviews by asking questions
     and recording answers using text-to-speech and speech recognition.
     """
+    # Get the directory where this script is located
+    _SCRIPT_DIR = Path(__file__).resolve().parent
+    
+    # File Paths
+    QUESTION_FILE_PATH = _SCRIPT_DIR / "questions.txt"
+    LOGS_FILE_PATH = _SCRIPT_DIR / "logs"
 
     # Class constants
     INTRO = """
@@ -30,7 +37,6 @@ Your answer has been recorded.
  Next question.
 """
 
-    LOGS_FILE_PATH = "backend/odin/screening_agent/logs"
 
     def __init__(self, caller_id:str, caller_number:str):
         """
@@ -39,12 +45,11 @@ Your answer has been recorded.
         :param questions: Dictionary of questions to ask (key: question number, value: question text)
         :type questions: dict, optional
         """
-        # Default questions
-        self.questions_dict = {
-            1: "What is your full name?",
-            2: "Do you identify as a Aboriginal or Torres Strait Islanders?",
-            3: "What is your nationality?"
-        }
+
+
+        # Register the questions
+        self.questions_dict = self._question_dict_builder(self.QUESTION_FILE_PATH)
+        print(self.questions_dict)
 
         self.answers_dict:dict = {}
         self.question_number:int = 1
@@ -201,6 +206,24 @@ Your answer has been recorded.
         with open(self.LOGS_FILE_PATH + "/" + filename, "w") as file:
             file.write(output)
 
+
+    def _question_dict_builder(self, filepath:str) -> dict:
+        questions_dict:dict = {}
+
+        # Open and read the file
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                
+                parts: list[str] = line.split('. ', 1)
+
+                if len(parts) == 2 and parts[0].isdigit():
+                    questions_dict[int(parts[0])] = parts[1]
+        
+        return questions_dict
+                    
 
 if __name__ == "__main__":
     agent = ScreeningAgent("test_call_id", "555-1234")
