@@ -6,14 +6,19 @@ from pathlib import Path
 backend_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(backend_root))
 
-
 from flask import Flask, request, jsonify
 from threading import Thread, Event
 from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 import time
 import os
+import uuid
+
+
+RING_DURATION = 1.0
+EXTENSION = "0147"
 
 app = Flask(__name__)
+
 
 # Store active assistant sessions
 active_sessions = {}
@@ -27,39 +32,41 @@ def health():
 
 @app.route('/webhook/call-started', methods=['GET', 'POST'])
 def call_started():
-    """Webhook endpoint triggered when a call starts
-    
-    Supports both:
-    - GET requests (from 3CX Custom URL integration)
-    - POST requests (from 3CX CFD)
-    """
+    """Webhook endpoint triggered when a call starts via Custom URL"""
     print("\n" + "=" * 60)
     print("DEBUG: /webhook/call-started endpoint called")
-    print(f"DEBUG: Method = {request.method}")
     print("=" * 60)
 
-    # Handle GET request (from Custom URL)
-    if request.method == 'GET':
-        call_id = request.args.get('call_id', f'call_{int(time.time())}')
-        caller_phone = request.args.get('from')
-        print(f"DEBUG: GET request - call_id={call_id}, caller_phone={caller_phone}")
+    # Get parameters from Custom URL
+    caller_display = request.args.get('call_id', 'unknown')
+    caller_phone = request.args.get('from')
     
-    # Handle POST request (from CFD)
-    else:
-        data = request.json or {}
-        call_id = data.get('call_id')
-        caller_phone = data.get('from')
-        print(f"DEBUG: POST request - call_id={call_id}, caller_phone={caller_phone}")
+    # Create UNIQUE call_id to prevent blocking repeat calls
+    call_id = f"{caller_phone}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    print(f"DEBUG: display={caller_display}, call_id={call_id}, caller={caller_phone}")
 
-    if not call_id:
-        call_id = f'call_{int(time.time())}'
-
+    # Check if call already in progress
     if call_id in active_sessions:
-        return jsonify({'status': 'already running'}), 200
+        return "<script>window.close();</script>", 200
 
+    # ============= AUTO-ANSWER THE CALL =============
+    print(f"DEBUG: Auto-answering call from {caller_phone} on extension {EXTENSION}...")
+    
+    from thoth.core.call_assistant.call_flow_client import auto_answer_incoming_call
+    
+    time.sleep(RING_DURATION)
+    
+    answer_success = auto_answer_incoming_call(EXTENSION, caller_phone)
+    
+    if answer_success:
+        print("✅ Call answered successfully via API")
+    else:
+        print("⚠️ Failed to auto-answer call (will continue anyway)")
+    # ================================================
+
+    # Create and start assistant
     print("DEBUG: Creating CallAssistantV3 instance...")
-    # Use V3 assistant with LLM-driven conversation flow
-    assistant = CallAssistantV3(caller_phone=caller_phone, extension="0146")
+    assistant = CallAssistantV3(caller_phone=caller_phone, extension=EXTENSION)
     stop_event = Event()
 
     def run_assistant():
@@ -71,68 +78,57 @@ def call_started():
             import traceback
             traceback.print_exc()
         finally:
-            # Always clean up the session
             print(f"Removing session for call {call_id}")
             if call_id in active_sessions:
                 del active_sessions[call_id]
+            print(f"✅ Session removed. Active sessions: {len(active_sessions)}")
 
-            # os.system("cls" if os.name == "nt" else "clear")  # Disabled during debugging
-            print(f"Session removed. Active sessions: {len(active_sessions)}")
-
-    # Use daemon=True to prevent blocking Flask shutdown
-    print("DEBUG: Creating and starting assistant thread...")
+    print("DEBUG: Starting assistant thread...")
     thread = Thread(target=run_assistant, daemon=True)
     thread.start()
-    print("DEBUG: Thread started successfully")
 
+    # Store session
     active_sessions[call_id] = {
         'assistant': assistant,
         'thread': thread,
         'stop_event': stop_event,
         'started_at': time.time(),
-        'version': 'v3'  # Track which version is being used
+        'version': 'v3',
+        'answered': answer_success,
+        'caller_phone': caller_phone
     }
 
-    return jsonify({
-        'status': 'success',
-        'message': f'Voice assistant V3 started for call {call_id}',
-        'caller_phone': caller_phone,
-        'version': 'v3',
-        'description': 'LLM-driven conversation flow'
-    }), 200
+    # Return simple HTML that closes immediately
+    return "<script>setTimeout(function(){window.close();}, 1000);</script>", 200
 
 
 @app.route('/webhook/call-ended', methods=['GET', 'POST'])
+@app.route('/webhook/call-ended', methods=['GET'])
 def call_ended():
-    """Webhook endpoint triggered when a call ends
+    """Webhook endpoint triggered when a call ends"""
+    caller_phone = request.args.get('from')
     
-    Supports both GET and POST requests
-    """
+    # Find session by caller phone
+    session_to_end = None
+    call_id_to_end = None
+    
+    for cid, session in active_sessions.items():
+        if session.get('caller_phone') == caller_phone:
+            session_to_end = session
+            call_id_to_end = cid
+            break
+    
+    if not session_to_end:
+        print(f"⚠️ No active session found for caller {caller_phone}")
+        return "<script>window.close();</script>", 404
 
-    # Handle GET request
-    if request.method == 'GET':
-        call_id = request.args.get('call_id')
-    # Handle POST request
-    else:
-        data = request.json or {}
-        call_id = data.get('call_id')
-
-    if not call_id or call_id not in active_sessions:
-        return jsonify({'error': 'No active session found'}), 404
-
-    # Get the stop event and signal it
-    session = active_sessions[call_id]
-    stop_event = session['stop_event']
-
-    # Signal the assistant to stop (non-blocking)
+    # Signal the assistant to stop
+    stop_event = session_to_end['stop_event']
     stop_event.set()
+    
+    print(f"✅ Stop signal sent for call {call_id_to_end}")
 
-    # DON'T wait for cleanup - respond immediately
-    return jsonify({
-        'status': 'success',
-        'message': f'Stop signal sent for call {call_id}',
-        'version': session.get('version', 'unknown')
-    }), 200
+    return "<script>window.close();</script>", 200
 
 
 @app.route('/status', methods=['GET'])
