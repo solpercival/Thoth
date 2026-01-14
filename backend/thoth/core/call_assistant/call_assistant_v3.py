@@ -19,6 +19,8 @@ from thoth.core.email_agent.email_formatter import format_ezaango_shift_data
 from thoth.core.email_agent.email_sender import send_notify_email
 from thoth.automation.test_integrated_workflow import test_integrated_workflow
 
+from thoth.core.call_assistant.call_flow_client import *
+
 
 # Comprehensive system prompt that defines the entire conversation flow
 SYSTEM_PROMPT = """You are a call center agent handling shift queries and cancellations.
@@ -59,6 +61,9 @@ Follow this flow EXACTLY and output special commands when needed:
 
 7. IF USER SAYS NO or changes mind:
    - Reset and ask what they'd like to do instead
+
+8. IF USER WANTS TO CLOSE THE CALL:
+   - Output ONLY: <END>
 
 CRITICAL RULES:
 - ONLY output your IMMEDIATE response - do NOT predict or write future dialogue
@@ -107,11 +112,13 @@ class CallAssistantV3:
     - Much simpler codebase (~250 lines vs V2's ~600)
     """
 
-    def __init__(self, caller_phone: Optional[str] = None):
+    def __init__(self, caller_phone: Optional[str] = None, extension: Optional[str] = None):
         self.caller_phone = caller_phone
+        self.extension = extension
         self.llm_client = OllamaClient(model=LLM_MODEL, system_prompt=SYSTEM_PROMPT)
         self.whisper_client: SystemAudioWhisperClient = None
         self.llm_response_array = []
+        self.should_end_call = False  # Flag to track if call should end
 
         # Context for tracking current operation
         self.context: Dict[str, Any] = {
@@ -154,6 +161,10 @@ class CallAssistantV3:
             if response_to_speak:
                 self._speak(response_to_speak)
 
+            # Check if we should end the call after speaking
+            if self.should_end_call:
+                self._end_call()
+
         except Exception as e:
             print(f"[ERROR] Failed to process phrase: {e}")
             import traceback
@@ -161,8 +172,9 @@ class CallAssistantV3:
             self._speak("Sorry, I encountered an error. Please try again.")
 
         finally:
-            # Resume audio processing
-            self.whisper_client.resume()
+            # Resume audio processing (unless call is ending)
+            if not self.should_end_call:
+                self.whisper_client.resume()
 
     def _process_response(self, llm_response: str, user_phrase: str) -> Optional[str]:
         """
@@ -205,6 +217,11 @@ class CallAssistantV3:
         # 6. <DENY> - Cannot help with request
         if "<DENY>" in llm_response:
             return "I'm sorry, I can't help with that request. I can only assist with shift-related queries and cancellations. Is there anything else I can help you with?"
+
+        # 7. <END> - End the call
+        if "<END>" in llm_response:
+            self.should_end_call = True
+            return "Thank you for calling. Good day."
 
         # No action tag - clean and return the response for TTS
         return self._clean_response(llm_response)
@@ -434,6 +451,30 @@ class CallAssistantV3:
         except Exception as e:
             print(f"[TTS ERROR] {e}")
 
+    def _end_call(self) -> None:
+        """
+        End the call using the call flow client.
+        """
+        print("\n[ACTION] Ending call...")
+
+        if not self.extension:
+            print("[WARNING] No extension provided, cannot end call via PBX")
+            return
+
+        try:
+            # Call the function from call_flow_client to close all calls
+            success = close_all_calls_for_extension(self.extension)
+
+            if success:
+                print(f"[SUCCESS] Call ended for extension {self.extension}")
+            else:
+                print(f"[ERROR] Failed to end call for extension {self.extension}")
+
+        except Exception as e:
+            print(f"[ERROR] Exception while ending call: {e}")
+            import traceback
+            traceback.print_exc()
+
     def run(self):
         """Start the voice assistant"""
         self.whisper_client = SystemAudioWhisperClient(
@@ -526,6 +567,11 @@ class CallAssistantV3:
                         print(f"Error terminating pyaudio (non-fatal): {pyaudio_err}")
 
             print("Cleanup complete.")
+
+
+
+
+
 
 
 if __name__ == "__main__":

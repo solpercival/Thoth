@@ -25,28 +25,41 @@ def health():
     return jsonify({'status': 'ok'}), 200
 
 
-@app.route('/webhook/call-started', methods=['POST'])
+@app.route('/webhook/call-started', methods=['GET', 'POST'])
 def call_started():
-    """Webhook endpoint triggered when a call starts"""
+    """Webhook endpoint triggered when a call starts
+    
+    Supports both:
+    - GET requests (from 3CX Custom URL integration)
+    - POST requests (from 3CX CFD)
+    """
     print("\n" + "=" * 60)
     print("DEBUG: /webhook/call-started endpoint called")
+    print(f"DEBUG: Method = {request.method}")
     print("=" * 60)
 
-    data = request.json
-    call_id = data.get('call_id')
-    caller_phone = data.get('from')  # Extract caller phone number
-
-    print(f"DEBUG: call_id={call_id}, caller_phone={caller_phone}")
+    # Handle GET request (from Custom URL)
+    if request.method == 'GET':
+        call_id = request.args.get('call_id', f'call_{int(time.time())}')
+        caller_phone = request.args.get('from')
+        print(f"DEBUG: GET request - call_id={call_id}, caller_phone={caller_phone}")
+    
+    # Handle POST request (from CFD)
+    else:
+        data = request.json or {}
+        call_id = data.get('call_id')
+        caller_phone = data.get('from')
+        print(f"DEBUG: POST request - call_id={call_id}, caller_phone={caller_phone}")
 
     if not call_id:
-        return jsonify({'error': 'call_id required'}), 400
+        call_id = f'call_{int(time.time())}'
 
     if call_id in active_sessions:
         return jsonify({'status': 'already running'}), 200
 
     print("DEBUG: Creating CallAssistantV3 instance...")
     # Use V3 assistant with LLM-driven conversation flow
-    assistant = CallAssistantV3(caller_phone=caller_phone)
+    assistant = CallAssistantV3(caller_phone=caller_phone, extension="0146")
     stop_event = Event()
 
     def run_assistant():
@@ -89,14 +102,22 @@ def call_started():
     }), 200
 
 
-@app.route('/webhook/call-ended', methods=['POST'])
+@app.route('/webhook/call-ended', methods=['GET', 'POST'])
 def call_ended():
-    """Webhook endpoint triggered when a call ends"""
+    """Webhook endpoint triggered when a call ends
+    
+    Supports both GET and POST requests
+    """
 
-    data = request.json
-    call_id = data.get('call_id')
+    # Handle GET request
+    if request.method == 'GET':
+        call_id = request.args.get('call_id')
+    # Handle POST request
+    else:
+        data = request.json or {}
+        call_id = data.get('call_id')
 
-    if call_id not in active_sessions:
+    if not call_id or call_id not in active_sessions:
         return jsonify({'error': 'No active session found'}), 404
 
     # Get the stop event and signal it
@@ -140,9 +161,12 @@ if __name__ == '__main__':
         print("LLM-driven conversation flow - no state machine!")
         print("=" * 60)
         print("\nEndpoints:")
-        print("  POST /webhook/call-started - Start a call session")
-        print("  POST /webhook/call-ended - End a call session")
+        print("  GET/POST /webhook/call-started - Start a call session")
+        print("  GET/POST /webhook/call-ended - End a call session")
         print("  GET /status - View active sessions")
+        print("\nSupports both:")
+        print("  - Custom URL (GET with query params)")
+        print("  - CFD (POST with JSON body)")
         print("\nServer running on http://localhost:5000\n")
         print("=" * 60 + "\n")
 
