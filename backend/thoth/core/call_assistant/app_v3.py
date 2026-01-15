@@ -8,14 +8,16 @@ sys.path.insert(0, str(backend_root))
 
 from flask import Flask, request, jsonify
 from threading import Thread, Event
-from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 import time
 import os
 import uuid
 
+from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extension, is_call_active
+from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 
-ESTABLISH_DELAY = 1.0
-EXTENSION = "0147"
+ESTABLISH_DELAY = 1.0  # Delay before the greeting is played and the transcriber is activated
+EXTENSION = "0147"  # Extension of target number
+CALL_STATUS_POLL_FREQ = 2.0  # How often should we poll the current call to see if it is still active
 
 app = Flask(__name__)
 
@@ -49,19 +51,9 @@ def call_started():
     if call_id in active_sessions:
         return "<script>window.close();</script>", 200
 
+    # NOTE: Auto-answer is configured in the 3CX user menu. If auto-answer from API is wanted,
+    # do it here. Add "if" statement to continue if auto-asnwer API Call is succesful, break otherwise.
     # ============= AUTO-ANSWER THE CALL =============
-    print(f"DEBUG: Auto-answering call from {caller_phone} on extension {EXTENSION}...")
-    
-    from thoth.core.call_assistant.call_flow_client import auto_answer_incoming_call
-    
-    
-    answer_success = auto_answer_incoming_call(EXTENSION, caller_phone)
-    
-    if answer_success:
-        time.sleep(ESTABLISH_DELAY)  # Allow 3CX top fully establish the connection before doing anything
-        print("✅ Call answered successfully via API")
-    else:
-        print("⚠️ Failed to auto-answer call (will continue anyway)")
     # ================================================
 
     # Create and start assistant
@@ -70,18 +62,27 @@ def call_started():
     stop_event = Event()
 
     def run_assistant():
-        print("DEBUG: run_assistant thread started")
         try:
+            def monitor_call():
+                while not stop_event.is_set():
+                    time.sleep(2)
+                    if not is_call_active(EXTENSION, caller_phone):
+                        print(f"Call disconnected by {caller_phone}")
+                        print("Session Stopped")
+                        stop_event.set()
+                        break
+            
+            monitor_thread = Thread(target=monitor_call, daemon=True)
+            monitor_thread.start()
+            
             assistant.run_with_event(stop_event)
+
+
         except Exception as e:
-            print(f"!!! Assistant error for call {call_id}: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[ERROR] {e}")
         finally:
-            print(f"Removing session for call {call_id}")
             if call_id in active_sessions:
                 del active_sessions[call_id]
-            print(f"✅ Session removed. Active sessions: {len(active_sessions)}")
 
     print("DEBUG: Starting assistant thread...")
     thread = Thread(target=run_assistant, daemon=True)
@@ -94,7 +95,6 @@ def call_started():
         'stop_event': stop_event,
         'started_at': time.time(),
         'version': 'v3',
-        'answered': answer_success,
         'caller_phone': caller_phone
     }
 
