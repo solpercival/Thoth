@@ -158,10 +158,10 @@ class WhisperClient:
     def start(self):
         """Start the transcription service."""
         if self.is_running:
-            print("Transcription service is already running!")
+            print("WHISPER_CLIENT.PY: Transcription service is already running!")
             return
         
-        print("Starting transcription service...")
+        print("WHISPER_CLIENT.PY: Starting transcription service...")
         
         # Initialize audio components
         self._initialize_audio()
@@ -184,12 +184,12 @@ class WhisperClient:
         self.transcription_thread = threading.Thread(target=self._transcription_loop, daemon=True)
         self.transcription_thread.start()
         
-        print("Transcription service started. Listening...")
+        print("WHISPER_CLIENT.PY: Transcription service started. Listening...")
     
     def stop(self):
         """Stop the transcription service."""
         if not self.is_running:
-            print("Transcription service is not running!")
+            print("WHISPER_CLIENT.PY: Transcription service is not running!")
             return
         
         print("\nStopping transcription service...")
@@ -199,11 +199,11 @@ class WhisperClient:
         if self.transcription_thread:
             self.transcription_thread.join(timeout=2)
         
-        print("\nFinal Transcription:")
+        print("\nWHISPER_CLIENT.PY: Final Transcription:")
         for line in self.transcription:
             print(line)
         
-        print("Transcription service stopped.")
+        print("WHISPER_CLIENT.PY: Transcription service stopped.")
     
     def get_transcription(self):
         """Get the current transcription as a list of strings."""

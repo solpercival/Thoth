@@ -8,14 +8,16 @@ sys.path.insert(0, str(backend_root))
 
 from flask import Flask, request, jsonify
 from threading import Thread, Event
-from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 import time
 import os
 import uuid
 
+from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extension, is_call_active
+from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 
-ESTABLISH_DELAY = 1.0
-EXTENSION = "0147"
+ESTABLISH_DELAY = 1.0  # Delay before the greeting is played and the transcriber is activated
+EXTENSION = "0147"  # Extension of target number
+CALL_STATUS_POLL_FREQ = 2.0  # How often should we poll the current call to see if it is still active
 
 app = Flask(__name__)
 
@@ -33,57 +35,54 @@ def health():
 @app.route('/webhook/call-started', methods=['GET', 'POST'])
 def call_started():
     """Webhook endpoint triggered when a call starts via Custom URL"""
-    print("\n" + "=" * 60)
-    print("DEBUG: /webhook/call-started endpoint called")
-    print("=" * 60)
+    
 
     # Get parameters from Custom URL
     caller_display = request.args.get('call_id', 'unknown')
     caller_phone = request.args.get('from')
-    
+
     # Create UNIQUE call_id to prevent blocking repeat calls
     call_id = f"{caller_phone}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    print(f"DEBUG: display={caller_display}, call_id={call_id}, caller={caller_phone}")
+
+    print(f"APP.PY: /webhook/call-started endpoint called. Caller: {caller_phone}, caller display: {caller_display}, call id: {print(f"APP.PY: /webhook/call-started endpoint called. Caller: {caller_phone}, caller display: {caller_display}")}")
 
     # Check if call already in progress
     if call_id in active_sessions:
         return "<script>window.close();</script>", 200
 
+    # NOTE: Auto-answer is configured in the 3CX user menu. If auto-answer from API is wanted,
+    # do it here. Add "if" statement to continue if auto-asnwer API Call is succesful, break otherwise.
     # ============= AUTO-ANSWER THE CALL =============
-    print(f"DEBUG: Auto-answering call from {caller_phone} on extension {EXTENSION}...")
-    
-    from thoth.core.call_assistant.call_flow_client import auto_answer_incoming_call
-    
-    
-    answer_success = auto_answer_incoming_call(EXTENSION, caller_phone)
-    
-    if answer_success:
-        time.sleep(ESTABLISH_DELAY)  # Allow 3CX top fully establish the connection before doing anything
-        print("✅ Call answered successfully via API")
-    else:
-        print("⚠️ Failed to auto-answer call (will continue anyway)")
     # ================================================
 
     # Create and start assistant
-    print("DEBUG: Creating CallAssistantV3 instance...")
+    print("APP.PY: Creating agent")
     assistant = CallAssistantV3(caller_phone=caller_phone, extension=EXTENSION)
     stop_event = Event()
 
     def run_assistant():
-        print("DEBUG: run_assistant thread started")
         try:
+            def monitor_call():
+                while not stop_event.is_set():
+                    time.sleep(2)
+                    if not is_call_active(EXTENSION, caller_phone):
+                        print(f"APP.PY: Call disconnected by {caller_phone}. Session stopped.")
+                        stop_event.set()
+                        break
+            
+            monitor_thread = Thread(target=monitor_call, daemon=True)
+            monitor_thread.start()
+            
             assistant.run_with_event(stop_event)
+
+
         except Exception as e:
-            print(f"!!! Assistant error for call {call_id}: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[ERROR] {e}")
         finally:
-            print(f"Removing session for call {call_id}")
             if call_id in active_sessions:
                 del active_sessions[call_id]
-            print(f"✅ Session removed. Active sessions: {len(active_sessions)}")
 
-    print("DEBUG: Starting assistant thread...")
+    print("APP.PY: Starting assitant thread.")
     thread = Thread(target=run_assistant, daemon=True)
     thread.start()
 
@@ -94,7 +93,6 @@ def call_started():
         'stop_event': stop_event,
         'started_at': time.time(),
         'version': 'v3',
-        'answered': answer_success,
         'caller_phone': caller_phone
     }
 
@@ -119,14 +117,14 @@ def call_ended():
             break
     
     if not session_to_end:
-        print(f"⚠️ No active session found for caller {caller_phone}")
+        print(f"APP.PY: ⚠️ No active session found for caller {caller_phone}")
         return "<script>window.close();</script>", 404
 
     # Signal the assistant to stop
     stop_event = session_to_end['stop_event']
     stop_event.set()
     
-    print(f"✅ Stop signal sent for call {call_id_to_end}")
+    print(f"APP.PY: Stop call requested for caller: {caller_phone}, call id: {call_id_to_end}")
 
     return "<script>window.close();</script>", 200
 
@@ -158,7 +156,6 @@ if __name__ == '__main__':
         print("\nEndpoints:")
         print("  GET/POST /webhook/call-started - Start a call session")
         print("  GET/POST /webhook/call-ended - End a call session")
-        print("  GET /status - View active sessions")
         print("\nServer running on http://localhost:5000\n")
         print("=" * 60 + "\n")
 
