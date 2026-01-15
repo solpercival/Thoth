@@ -6,6 +6,8 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('Stopped');
   const [error, setError] = useState<string | null>(null);
+  const [is3CXLoading, setIs3CXLoading] = useState(false);
+  const [status3CX, setStatus3CX] = useState<string | null>(null);
 
   useEffect(() => {
     // Listen for backend status changes
@@ -49,12 +51,47 @@ function App() {
         // Start backend
         setStatus('Starting...');
         await window.electron?.startBackend?.();
+        
+        // Poll for status until it's actually running
+        let attempts = 0;
+        const maxAttempts = 30;
+        while (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 500)); // Wait 500ms between checks
+          const status = await window.electron?.getBackendStatus?.();
+          console.log(`Status check ${attempts + 1}: ${JSON.stringify(status)}`);
+          
+          if (status?.isRunning) {
+            setIsRunning(true);
+            setStatus('Running');
+            return;
+          }
+          attempts++;
+        }
+        
+        // If we get here, timeout - but backend might still be starting
+        setStatus('Running (delayed startup)');
         setIsRunning(true);
-        setStatus('Running');
       } else {
         // Stop backend
         setStatus('Stopping...');
         await window.electron?.stopBackend?.();
+        
+        // Poll for status until it's actually stopped
+        let attempts = 0;
+        const maxAttempts = 10;
+        while (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 500));
+          const status = await window.electron?.getBackendStatus?.();
+          console.log(`Stop check ${attempts + 1}: ${JSON.stringify(status)}`);
+          
+          if (!status?.isRunning) {
+            setIsRunning(false);
+            setStatus('Stopped');
+            return;
+          }
+          attempts++;
+        }
+        
         setIsRunning(false);
         setStatus('Stopped');
       }
@@ -63,6 +100,28 @@ function App() {
       setError(errorMsg);
       setStatus('Error');
       setIsRunning(false);
+    }
+  };
+
+  const handleStart3CX = async () => {
+    setIs3CXLoading(true);
+    setStatus3CX('Starting 3CX environment...');
+    
+    try {
+      const electron = (window as any).electron;
+      if (electron?.ipcInvoke) {
+        const result = await electron.ipcInvoke('start-3cx-environment');
+        setStatus3CX('✓ 3CX environment started!');
+        console.log('3CX result:', result);
+      } else {
+        setStatus3CX('✗ IPC not available');
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setStatus3CX(`✗ Error: ${errorMsg}`);
+      console.error('Error starting 3CX:', err);
+    } finally {
+      setIs3CXLoading(false);
     }
   };
 
@@ -91,6 +150,32 @@ function App() {
         {error && (
           <p style={{ marginTop: '10px', color: '#ff6b6b' }}>
             Error: {error}
+          </p>
+        )}
+      </div>
+
+      <div style={{ marginTop: '40px', borderTop: '1px solid #555', paddingTop: '20px' }}>
+        <h2>3CX Environment</h2>
+        <button
+          onClick={handleStart3CX}
+          disabled={is3CXLoading}
+          style={{
+            padding: '10px 24px',
+            fontSize: '14px',
+            fontWeight: 500,
+            border: 'none',
+            borderRadius: '4px',
+            cursor: is3CXLoading ? 'not-allowed' : 'pointer',
+            backgroundColor: '#007bff',
+            color: 'white',
+            opacity: is3CXLoading ? 0.6 : 1,
+          }}
+        >
+          {is3CXLoading ? 'Starting...' : 'Start 3CX Environment'}
+        </button>
+        {status3CX && (
+          <p style={{ marginTop: '15px', color: status3CX.includes('✓') ? '#28a745' : '#ff6b6b' }}>
+            {status3CX}
           </p>
         )}
       </div>

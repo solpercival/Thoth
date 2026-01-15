@@ -1,10 +1,15 @@
-import pyttsx3
 import pyaudio
 import wave
 import tempfile
 import os
 import platform
 import subprocess
+
+# pyttsx3 is Windows-only, import conditionally
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 
 class TTSClient:
     def __init__(self, rate:int=150, volume:float=0.9, output_device_name:str=None) -> None:
@@ -71,6 +76,8 @@ class TTSClient:
                 self._generate_with_espeak(text, temp_filename)
             else:
                 # Use pyttsx3 on Windows
+                if pyttsx3 is None:
+                    raise ImportError("pyttsx3 not available on this platform")
                 engine = pyttsx3.init()
                 engine.setProperty('rate', self.rate)
                 engine.setProperty('volume', self.volume)
@@ -104,6 +111,8 @@ class TTSClient:
         except subprocess.TimeoutExpired:
             print("[TTS] Espeak timeout, using fallback")
             # Fallback to pyttsx3 if espeak times out
+            if pyttsx3 is None:
+                raise ImportError("pyttsx3 not available for fallback")
             engine = pyttsx3.init()
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)
@@ -111,8 +120,11 @@ class TTSClient:
             engine.runAndWait()
             engine.stop()
         except FileNotFoundError:
-            print("[TTS] Espeak not found, using pyttsx3")
+            print("[TTS] Espeak not found, using fallback TTS")
             # Fallback if espeak is not installed
+            if pyttsx3 is None:
+                print("[TTS] ERROR: pyttsx3 not available and espeak not found")
+                raise ImportError("No TTS engine available on this platform")
             engine = pyttsx3.init()
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)

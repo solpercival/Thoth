@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: thoth-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+    restart: on-failure:5
+    networks:
+      - thoth-network
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        limits:
+          cpus: '4'              # Maximum 4 CPU cores
+          memory: 6G             # Maximum 6GB RAM
+        reservations:
+          cpus: '2'              # Minimum 2 CPU cores
+          memory: 4G             # Minimum 4GB RAM
+
+networks:
+  thoth-network:
+    driver: bridge

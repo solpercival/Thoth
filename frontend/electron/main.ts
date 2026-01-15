@@ -11,6 +11,7 @@ import {
   dialog,
 } from 'electron';
 import path from 'path';
+import { execFile } from 'child_process';
 import { CONFIG } from './config';
 import { getBackendManager, setupBackendIPC } from './backend';
 import { createTray } from './tray';
@@ -176,6 +177,37 @@ async function initializeApp(): Promise<void> {
   
   console.log('Electron app initialized - Backend will start automatically at 17:00 PM');
 }
+
+/**
+ * App lifecycle events
+ */
+
+// Handle 3CX environment startup
+ipcMain.handle('start-3cx-environment', async (event) => {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(__dirname, '../../scripts/start_3cx_environment.sh');
+    
+    console.log(`[3CX] Starting environment with script: ${scriptPath}`);
+    
+    execFile('bash', [scriptPath], { shell: '/bin/bash' }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('[3CX] Script error:', error);
+        reject({
+          error: error.message,
+          stderr: stderr,
+        });
+      } else {
+        console.log('[3CX] Script completed successfully');
+        console.log('[3CX] Output:', stdout);
+        resolve({
+          success: true,
+          message: 'Environment started successfully',
+          output: stdout,
+        });
+      }
+    });
+  });
+});
 
 /**
  * App lifecycle events
