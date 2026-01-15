@@ -78,7 +78,7 @@ def close_all_calls_for_extension(extension):
         participant_id = participant['id']
         caller = participant.get('party_caller_id', 'Unknown')
         
-        print(f"Dropping call from {caller} (participant {participant_id})")
+        print(f"3CX_CLIENT.PY: Dropping call from {caller} (participant {participant_id})")
         success = drop_call(extension, participant_id, token)
         
         if success:

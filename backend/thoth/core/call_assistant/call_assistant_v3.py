@@ -1,8 +1,6 @@
 import sys
 from pathlib import Path
 
-# Add backend root to Python path
-# call_assistant_v3.py is at: backend/thoth/core/call_assistant/call_assistant_v3.py
 backend_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(backend_root))
 
@@ -79,6 +77,8 @@ OPENING_PROMPT = "Hello. Thank you for calling Help at Hands Support. How can I 
 PROCESSING_PROMPT = "I'll look into that. Please wait."
 LLM_MODEL = "qwen3:8b"
 
+LOG_PREFIX = "CALL_ASSISTANT.PY:"
+
 
 class CallAssistantV3:
     def __init__(self, caller_phone: Optional[str] = None, extension: Optional[str] = None):
@@ -88,7 +88,6 @@ class CallAssistantV3:
         self.whisper_client: SystemAudioWhisperClient = None
         self.llm_response_array = []
         self.should_end_call = False
-
         self.stop_event: Event = None
 
         self.context: Dict[str, Any] = {
@@ -99,16 +98,12 @@ class CallAssistantV3:
         }
 
     def on_phrase_complete(self, phrase: str) -> None:
-        # Check if we should stop before continuing with the heavy LLM processing
         if self.stop_event and self.stop_event.is_set():
             return
-        
-        print(f"[USER] {phrase}")
 
-        # Pause the transcriber
+        print(f"{LOG_PREFIX} [USER] {phrase}")
         self.whisper_client.pause()
 
-        # Send transcription to LLM
         try:
             llm_response = self.llm_client.ask_llm(phrase)
             self.llm_response_array.append(llm_response)
@@ -122,7 +117,7 @@ class CallAssistantV3:
                 self._end_call()
 
         except Exception as e:
-            print(f"[ERROR] {e}")
+            print(f"{LOG_PREFIX} Error: {e}")
             self._speak("Sorry, I encountered an error. Please try again.")
 
         finally:
@@ -205,7 +200,7 @@ class CallAssistantV3:
             return processed if processed else self._clean_response(llm_response)
 
         except Exception as e:
-            print(f"[ERROR] Failed to get shifts: {e}")
+            print(f"{LOG_PREFIX} Shift retrieval failed: {e}")
             return "Sorry, there was an error retrieving your shifts. Please try again."
 
     def _handle_confirm_cancel(self, shift_id: str) -> str:
@@ -282,25 +277,24 @@ class CallAssistantV3:
             return True
 
         except Exception as e:
-            print(f"[ERROR] Failed to submit cancellation: {e}")
+            print(f"{LOG_PREFIX} Cancellation failed: {e}")
             return False
 
     def _speak(self, text: str) -> None:
-        print(f"[ASSISTANT] {text}")
+        print(f"{LOG_PREFIX} [ASSISTANT] {text}")
         try:
             tts_client = TTSClient(output_device_name="CABLE Input")
             tts_client.text_to_speech(text)
         except Exception as e:
-            print(f"[TTS ERROR] {e}")
+            print(f"{LOG_PREFIX} TTS error: {e}")
 
     def _end_call(self) -> None:
         if not self.extension:
             return
-
         try:
             close_all_calls_for_extension(self.extension)
         except Exception as e:
-            print(f"[ERROR] Failed to end call: {e}")
+            print(f"{LOG_PREFIX} End call failed: {e}")
 
     def run(self):
         self.whisper_client = SystemAudioWhisperClient(
@@ -311,13 +305,13 @@ class CallAssistantV3:
 
         try:
             self.whisper_client.start()
-            print("Voice Assistant V3 running. Press Ctrl+C to stop.")
+            print(f"{LOG_PREFIX} Running (Ctrl+C to stop)")
 
             while True:
                 sleep(1)
 
         except KeyboardInterrupt:
-            print("\nStopping...")
+            print(f"{LOG_PREFIX} Stopping...")
             self.whisper_client.stop(self.llm_response_array)
 
     def stop(self):
@@ -335,7 +329,7 @@ class CallAssistantV3:
 
             self._speak(OPENING_PROMPT)
             self.whisper_client.start()
-            print("Voice Assistant V3 running.")
+            print(f"{LOG_PREFIX} Running")
 
             while not stop_event.is_set():
                 sleep(0.5)
@@ -343,7 +337,7 @@ class CallAssistantV3:
         except KeyboardInterrupt:
             pass
         except Exception as e:
-            print(f"[ERROR] {e}")
+            print(f"{LOG_PREFIX} Error: {e}")
         finally:
             if self.whisper_client:
                 self.whisper_client.is_running = False
