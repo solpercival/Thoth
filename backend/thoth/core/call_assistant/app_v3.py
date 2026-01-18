@@ -20,7 +20,7 @@ EXTENSION = os.getenv('USED_EXTENSION')  # Extension of target number
 CALL_STATUS_POLL_FREQ = 2.0  # How often should we poll the current call to see if it is still active
 
 # For testing
-TEST_MODE = True  # Set to true to use test phone number (as the caller number)
+TEST_MODE = False  # Set to true to use test phone number (as the caller number)
 TEST_NUMBER = "0415500152"  
 
 app = Flask(__name__)
