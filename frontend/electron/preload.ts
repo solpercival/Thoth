@@ -38,6 +38,13 @@ const electronAPI = {
   showError: (title: string, message: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SHOW_ERROR, { title, message }),
 
+  // 3CX Environment
+  start3CXEnvironment: () => ipcRenderer.invoke('start-3cx-environment'),
+
+  // Generic IPC invoke (for custom channels)
+  ipcInvoke: (channel: string, ...args: any[]) =>
+    ipcRenderer.invoke(channel, ...args),
+
   // Listen for backend events
   onBackendLog: (callback: (message: string) => void) =>
     ipcRenderer.on(IPC_CHANNELS.BACKEND_LOG, (event, message) =>
