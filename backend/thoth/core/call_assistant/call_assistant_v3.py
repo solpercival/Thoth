@@ -147,7 +147,9 @@ class CallAssistantV3:
         if "<DENY>" in llm_response:
             return "I'm sorry, I can't help with that request. I can only assist with shift-related queries and cancellations. Is there anything else I can help you with?"
 
-        if "<END>" in llm_response:
+        #
+        if "<END>" in llm_response or \
+        "have a great day" in llm_response.lower().rstrip('!').rstrip('.'):
             self.should_end_call = True
             return "Thank you for calling. Good day."
 

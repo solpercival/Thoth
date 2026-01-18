@@ -54,7 +54,7 @@ class SystemAudioWhisperClient:
     client.stop() - stop transcribing
     """
     def __init__(self, model="base", non_english=False, energy_threshold=1000,
-                 record_timeout=0.5, phrase_timeout=3, on_phrase_complete=None,
+                 record_timeout=0.1, phrase_timeout=3, on_phrase_complete=None,
                  silence_threshold=0.01, max_phrase_duration=15):
         """
         Initialize the transcription service.
