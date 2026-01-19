@@ -34,7 +34,7 @@ echo "Firefox opened with PID: $FIREFOX_PID"
 
 # Step 2: Start the VirtualBox VM
 echo "Step 2: Starting VirtualBox VM: $VM_NAME"
-VBoxManage startvm "$VM_NAME" --type headless
+VBoxManage startvm "$VM_NAME" --type 
 if [ $? -eq 0 ]; then
     echo "✓ VM started successfully"
 else
@@ -51,7 +51,7 @@ echo "Step 4: Launching 3CX Desktop App inside VM..."
 VBoxManage guestcontrol "$VM_NAME" run \
     --username "$VM_USERNAME" \
     --password "$VM_PASSWORD" \
-    --exe "C:\\Program Files\\3CX\\3CXPhone.exe" \
+    --exe "C:\\Program Files\\3CX\\3CX.exe" \
     2>/dev/null &
 
 echo "✓ 3CX launch command sent to VM"
