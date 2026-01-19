@@ -1,6 +1,6 @@
 /**
- * Docker Backend Manager
- * Launches, monitors, and communicates with Docker-based Python Flask backend
+ * Native Python Backend Manager
+ * Launches Flask backend directly using Python virtual environment
  */
 
 import { spawn, ChildProcess } from 'child_process';
@@ -8,9 +8,10 @@ import { ipcMain, BrowserWindow } from 'electron';
 import axios, { AxiosInstance } from 'axios';
 import { EventEmitter } from 'events';
 import { CONFIG, getBackendUrl } from './config';
+import path from 'path';
 
 export class BackendManager extends EventEmitter {
-  private container: ChildProcess | null = null;
+  private process: ChildProcess | null = null;
   public isRunning: boolean = false;
   private appProcesses: Map<string, ChildProcess> = new Map();
   private httpClient: AxiosInstance;
@@ -25,50 +26,91 @@ export class BackendManager extends EventEmitter {
   }
 
   /**
-   * Start the Docker backend using docker-compose
+   * Start the Flask backend using Python virtual environment
+   * Automatically detects Windows or Linux/macOS and uses the correct venv paths
    */
   async start(): Promise<boolean> {
     if (this.isRunning) {
-      console.log('Docker backend already running');
+      console.log('Backend already running');
       return true;
     }
 
     return new Promise((resolve) => {
       try {
-        console.log('Starting Docker backend...');
+        const platformName = this.platform === 'win32' ? 'Windows' : 
+                            this.platform === 'darwin' ? 'macOS' : 'Linux';
+        console.log(`Starting native Python Flask backend on ${platformName}...`);
 
-        // Ensure PATH for Linux/macOS Electron
-        process.env.PATH = `${process.env.PATH}:/usr/bin:/usr/local/bin`;
+        // Get backend directory - from frontend/dist/electron -> backend
+        const backendDir = path.join(process.cwd(), '..', 'backend');
+        const venvDir = path.join(process.cwd(), '..', 'venv');
+        
+        console.log('Backend directory:', backendDir);
+        console.log('Venv directory:', venvDir);
 
-        const backendDir =
-          this.platform === 'win32'
-            ? `${process.cwd()}\\..\\backend`
-            : `${process.cwd()}/../backend`;
+        // Determine Python executable path from venv based on OS
+        // Windows: venv/Scripts/python.exe
+        // Linux/macOS: venv/bin/python
+        let pythonExe: string;
+        if (this.platform === 'win32') {
+          pythonExe = path.join(venvDir, 'Scripts', 'python.exe');
+        } else {
+          pythonExe = path.join(venvDir, 'bin', 'python');
+        }
 
-        // Unified docker compose command
-        const dockerCmd = this.platform === 'win32' ? 'docker.exe' : 'docker';
-        const args = ['compose', 'up', '--build'];
+        console.log('Using Python executable:', pythonExe);
 
-        this.container = spawn(dockerCmd, args, {
-          cwd: backendDir,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          shell: true,
-        });
+        // Verify Python executable exists
+        const fs = require('fs');
+        if (!fs.existsSync(pythonExe)) {
+          const errorMsg = `Python executable not found at: ${pythonExe}\nPlease create a virtual environment: python -m venv venv`;
+          console.error(errorMsg);
+          this.emit('error', errorMsg);
+          resolve(false);
+          return;
+        }
 
-        if (!this.container) throw new Error('Failed to spawn docker process');
+        // Set environment variables for Flask
+        // No need to "activate" venv - using Python executable directly handles it
+        const env = {
+          ...process.env,
+          FLASK_APP: 'odin/app.py',
+          FLASK_ENV: 'development',
+          PYTHONUNBUFFERED: '1',
+          // Ensure venv's site-packages are used
+          VIRTUAL_ENV: venvDir,
+        };
 
-        this.container.stdout?.on('data', (data) => {
+        // Start Flask using python -m flask run
+        this.process = spawn(
+          pythonExe,
+          ['-m', 'flask', 'run', '--host=0.0.0.0', '--port=5000'],
+          {
+            cwd: backendDir,
+            env: env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: false,
+          }
+        );
+
+        if (!this.process) {
+          throw new Error('Failed to spawn Python Flask process');
+        }
+
+        // Handle stdout
+        this.process.stdout?.on('data', (data) => {
           const msg = data.toString().trim();
           if (msg) {
-            console.log(`[Docker Backend] ${msg}`);
+            console.log(`[Flask Backend] ${msg}`);
             this.emit('log', msg);
           }
         });
 
-        this.container.stderr?.on('data', (data) => {
+        // Handle stderr
+        this.process.stderr?.on('data', (data) => {
           const msg = data.toString().trim();
           if (msg) {
-            console.log(`[Docker Backend stderr] ${msg}`);
+            console.log(`[Flask Backend stderr] ${msg}`);
             this.emit('log', msg);
           }
         });
@@ -81,35 +123,40 @@ export class BackendManager extends EventEmitter {
           try {
             const res = await this.httpClient.get('/health');
             if (res.status === 200) {
-              console.log('Backend is ready');
+              console.log('✓ Backend is ready and responding');
               this.isRunning = true;
               this.emit('started');
               return resolve(true);
             }
-          } catch (_) {}
+          } catch (_) {
+            // Health check failed, will retry
+          }
 
           retryCount++;
           if (retryCount < maxRetries) {
             setTimeout(checkHealth, 2000);
           } else {
-            console.warn('Backend timed out; assuming running');
+            console.warn('Backend health check timed out; assuming running');
             this.isRunning = true;
             this.emit('started');
             resolve(true);
           }
         };
 
-        setTimeout(checkHealth, 2000);
+        // Start health checks after 3 seconds
+        setTimeout(checkHealth, 3000);
 
-        this.container.on('exit', (code) => {
-          console.log(`Backend exited with code: ${code}`);
+        // Handle process exit
+        this.process.on('exit', (code) => {
+          console.log(`Backend process exited with code: ${code}`);
           this.isRunning = false;
-          this.container = null;
+          this.process = null;
           this.emit('stopped');
         });
 
-        this.container.on('error', (err) => {
-          console.error('Docker error:', err);
+        // Handle process errors
+        this.process.on('error', (err) => {
+          console.error('Backend process error:', err);
           this.emit('error', String(err));
           resolve(false);
         });
@@ -130,52 +177,40 @@ export class BackendManager extends EventEmitter {
 
     return new Promise((resolve) => {
       try {
-        console.log('Stopping Docker backend...');
+        console.log('Stopping Python Flask backend...');
 
-        process.env.PATH = `${process.env.PATH}:/usr/bin:/usr/local/bin`;
+        if (!this.process) {
+          this.isRunning = false;
+          this.emit('stopped');
+          resolve(true);
+          return;
+        }
 
-        const backendDir =
-          this.platform === 'win32'
-            ? `${process.cwd()}\\..\\backend`
-            : `${process.cwd()}/../backend`;
-
-        const dockerCmd = this.platform === 'win32' ? 'docker.exe' : 'docker';
-        const args = ['compose', 'down'];
-
-        const stop = spawn(dockerCmd, args, {
-          cwd: backendDir,
-          stdio: 'pipe',
-          shell: true,
-        });
-
+        // Set a timeout for force kill
         const killTimeout = setTimeout(() => {
-          if (this.container) {
-            console.warn('Force killing Docker backend...');
-            this.container.kill('SIGKILL');
+          if (this.process) {
+            console.warn('Force killing backend process...');
+            this.process.kill('SIGKILL');
           }
           this.isRunning = false;
           this.emit('stopped');
           resolve(true);
-        }, 10000);
+        }, 5000);
 
-        stop.on('exit', (code) => {
+        // Try graceful shutdown first
+        this.process.on('exit', () => {
           clearTimeout(killTimeout);
-          console.log(`Docker stop exited: ${code}`);
+          console.log('Backend stopped gracefully');
           this.isRunning = false;
           this.emit('stopped');
-          resolve(code === 0);
+          resolve(true);
         });
 
-        stop.on('error', (err) => {
-          clearTimeout(killTimeout);
-          console.error('Stop error:', err);
-          this.isRunning = false;
-          this.emit('stopped');
-          resolve(false);
-        });
+        // Send SIGTERM for graceful shutdown
+        this.process.kill('SIGTERM');
 
       } catch (err) {
-        console.error('Stop exception:', err);
+        console.error('Error stopping backend:', err);
         this.isRunning = false;
         this.emit('stopped');
         resolve(false);
@@ -203,18 +238,18 @@ export class BackendManager extends EventEmitter {
   }
 
   /**
-   * Start a named app (placeholder for Docker environment)
+   * Start a named app (not used in native mode)
    */
   async startApp(appName: string): Promise<boolean> {
-    console.log(`[Docker] Starting app: ${appName}`);
+    console.log(`[Native] Starting app: ${appName} - Not implemented`);
     return true;
   }
 
   /**
-   * Stop a named app (placeholder for Docker environment)
+   * Stop a named app (not used in native mode)
    */
   async stopApp(appName: string): Promise<boolean> {
-    console.log(`[Docker] Stopping app: ${appName}`);
+    console.log(`[Native] Stopping app: ${appName} - Not implemented`);
     return true;
   }
 }
@@ -256,7 +291,7 @@ export function setupBackendIPC(mainWindow: BrowserWindow | null): void {
     async (event, { method, endpoint, data }) => {
       return {
         success: true,
-        message: 'Docker backend does not expose direct API calls',
+        message: 'Native backend API calls can be added here',
       };
     }
   );
