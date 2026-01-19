@@ -4,36 +4,44 @@ import tempfile
 import os
 import platform
 import subprocess
+import asyncio
 
-# pyttsx3 is Windows-only, import conditionally
-try:
-    import pyttsx3
-except ImportError:
-    pyttsx3 = None
+import edge_tts
+from pydub import AudioSegment
+
+
+# Speaker Models:
+# en-US-AriaNeural (female US)
+# en-US-GuyNeural (male US)
+# en-AU-NatashaNeural (female AUS)
+# en-AU-WilliamNeural (male AUS)
+# en-GB-SoniaNeural (female UK)
+
+
 
 class TTSClient:
-    def __init__(self, rate:int=150, volume:float=0.9, output_device_name:str=None) -> None:
+    def __init__(self, rate:int=150, volume:float=0.9, output_device_name:str=None, voice:str="en-AU-NatashaNeural") -> None:
         """
-        Initialize TTS Client with pyttsx3 and PyAudio for device control.
+        Initialize TTS Client with edge-tts and PyAudio for device control.
 
         Args:
-            rate: Speech rate (words per minute)
+            rate: Speech rate (words per minute) - affects playback speed
             volume: Volume level 0.0-1.0
             output_device_name: Name of audio output device
                               Windows: "CABLE Input"
                               Linux: "virtual_speaker" or None for default
+            voice: Edge TTS voice name (default 'en-US-AriaNeural')
         """
         self.rate = rate
         self.volume = volume
+        self.voice = voice
         self.system = platform.system()
         
         # Determine the correct output device based on OS
         if output_device_name:
             if self.system == "Linux":
-                # On Linux, look for virtual_speaker or use the provided name
                 self.output_device_name = output_device_name if "virtual" in output_device_name.lower() else "virtual_speaker"
             else:
-                # Windows uses the provided name as-is
                 self.output_device_name = output_device_name
         else:
             self.output_device_name = None
@@ -61,76 +69,55 @@ class TTSClient:
 
     def text_to_speech(self, text:str) -> None:
         """
-        Convert text to speech and play it through the specified device.
+        Convert text to speech using edge-tts and play through specified device.
 
         Args:
             text: The text to speak
         """
-        # Create temporary WAV file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
-            temp_filename = temp_file.name
-
+        temp_mp3 = None
+        temp_wav = None
         try:
-            if self.system == "Linux":
-                # Use espeak directly on Linux to avoid pyttsx3 callback issues
-                self._generate_with_espeak(text, temp_filename)
-            else:
-                # Use pyttsx3 on Windows
-                if pyttsx3 is None:
-                    raise ImportError("pyttsx3 not available on this platform")
-                engine = pyttsx3.init()
-                engine.setProperty('rate', self.rate)
-                engine.setProperty('volume', self.volume)
-                engine.save_to_file(text, temp_filename)
-                engine.runAndWait()
-
-            # Play the WAV file to the specified device
-            self._play_audio_file(temp_filename)
+            # Create temp file for MP3
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as f:
+                temp_mp3 = f.name
+            
+            # Generate speech with edge-tts
+            # Convert rate to edge-tts format: +0%, -20%, +50%, etc.
+            rate_percent = int(((self.rate / 150.0) - 1) * 100)
+            rate_str = f"+{rate_percent}%" if rate_percent >= 0 else f"{rate_percent}%"
+            
+            asyncio.run(self._generate_speech(text, temp_mp3, rate_str))
+            
+            # Convert MP3 to WAV using pydub
+            audio = AudioSegment.from_mp3(temp_mp3)
+            
+            # Adjust volume
+            if self.volume != 1.0:
+                db_change = 20 * (self.volume - 1.0)
+                audio = audio + db_change
+            
+            # Export to temporary WAV file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as f:
+                temp_wav = f.name
+            audio.export(temp_wav, format='wav')
+            
+            # Play the WAV file
+            self._play_audio_file(temp_wav)
 
         except Exception as e:
             print(f"[TTS ERROR] {e}")
         finally:
-            # Clean up temp file
-            if os.path.exists(temp_filename):
-                try:
-                    os.remove(temp_filename)
-                except (PermissionError, OSError):
-                    pass  # File might still be in use, will be cleaned up later
-    
-    def _generate_with_espeak(self, text: str, output_file: str) -> None:
-        """Generate speech using espeak directly (Linux)"""
-        try:
-            # Use espeak to generate WAV file
-            # -w writes to file, -s sets speed (words per minute)
-            subprocess.run(
-                ['espeak', '-w', output_file, '-s', str(self.rate), text],
-                check=True,
-                capture_output=True,
-                timeout=10
-            )
-        except subprocess.TimeoutExpired:
-            print("[TTS] Espeak timeout, using fallback")
-            # Fallback to pyttsx3 if espeak times out
-            if pyttsx3 is None:
-                raise ImportError("pyttsx3 not available for fallback")
-            engine = pyttsx3.init()
-            engine.setProperty('rate', self.rate)
-            engine.setProperty('volume', self.volume)
-            engine.save_to_file(text, output_file)
-            engine.runAndWait()
-            engine.stop()
-        except FileNotFoundError:
-            print("[TTS] Espeak not found, using fallback TTS")
-            # Fallback if espeak is not installed
-            if pyttsx3 is None:
-                print("[TTS] ERROR: pyttsx3 not available and espeak not found")
-                raise ImportError("No TTS engine available on this platform")
-            engine = pyttsx3.init()
-            engine.setProperty('rate', self.rate)
-            engine.setProperty('volume', self.volume)
-            engine.save_to_file(text, output_file)
-            engine.runAndWait()
-            engine.stop()
+            for f in [temp_mp3, temp_wav]:
+                if f and os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except (PermissionError, OSError):
+                        pass
+
+    async def _generate_speech(self, text: str, output_file: str, rate: str) -> None:
+        """Generate speech using edge-tts"""
+        communicate = edge_tts.Communicate(text, self.voice, rate=rate)
+        await communicate.save(output_file)
 
     def _play_audio_file(self, filename:str) -> None:
         """Play a WAV file through the specified device."""
@@ -141,21 +128,18 @@ class TTSClient:
                     ['paplay', '--device', self.output_device_name, filename],
                     check=True,
                     capture_output=True,
-                    timeout=10
+                    timeout=30
                 )
                 return
             except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                # Fall back to PyAudio if paplay fails
                 print("[TTS] paplay failed, using PyAudio fallback")
         
         # Use PyAudio (Windows or Linux fallback)
         p = pyaudio.PyAudio()
 
         try:
-            # Open the WAV file
             wf = wave.open(filename, 'rb')
 
-            # Open stream with specified device
             stream = p.open(
                 format=p.get_format_from_width(wf.getsampwidth()),
                 channels=wf.getnchannels(),
@@ -164,7 +148,6 @@ class TTSClient:
                 output_device_index=self.device_index
             )
 
-            # Read and play audio in chunks
             chunk_size = 1024
             data = wf.readframes(chunk_size)
 
@@ -172,7 +155,6 @@ class TTSClient:
                 stream.write(data)
                 data = wf.readframes(chunk_size)
 
-            # Clean up
             stream.stop_stream()
             stream.close()
             wf.close()
@@ -180,6 +162,13 @@ class TTSClient:
         finally:
             p.terminate()
 
+
 if __name__ == "__main__":
     tts_client = TTSClient()
-    tts_client.text_to_speech("Cancellation of job for a...Mr. Roberts at...4 PM on...Sunday...is confirmed. Staff has been notified")
+
+    while True:
+        text = input(">> ")
+        if text.lower() == "quit":
+            break
+    
+        tts_client.text_to_speech(text)
