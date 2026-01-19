@@ -53,9 +53,7 @@ def call_started():
     # Create UNIQUE call_id to prevent blocking repeat calls
     call_id = f"{caller_phone}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
-    print(f"APP.PY: /webhook/call-started endpoint called. Caller: {caller_phone}, caller display: {caller_display}")
-
-    # Check if call already in progress
+   # Check if call already in progress
     if call_id in active_sessions:
         return "<script>window.close();</script>", 200
 
