@@ -16,8 +16,12 @@ from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extens
 from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
 
 ESTABLISH_DELAY = 1.0  # Delay before the greeting is played and the transcriber is activated
-EXTENSION = "0147"  # Extension of target number
+EXTENSION = os.getenv('USED_EXTENSION')  # Extension of target number
 CALL_STATUS_POLL_FREQ = 2.0  # How often should we poll the current call to see if it is still active
+
+# For testing
+TEST_MODE = False  # Set to true to use test phone number (as the caller number)
+TEST_NUMBER = "0415500152"  
 
 app = Flask(__name__)
 
@@ -41,6 +45,11 @@ def call_started():
     caller_display = request.args.get('call_id', 'unknown')
     caller_phone = request.args.get('from')
 
+    # Use test number if in test mode
+    if TEST_MODE:
+        caller_phone = TEST_NUMBER
+        print(f"APP.PY: TEST MODE - Using preset number: {caller_phone}")
+
     # Create UNIQUE call_id to prevent blocking repeat calls
     call_id = f"{caller_phone}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
@@ -60,19 +69,22 @@ def call_started():
 
     def run_assistant():
         try:
-            def monitor_call():
-                while not stop_event.is_set():
-                    time.sleep(2)
-                    if not is_call_active(EXTENSION, caller_phone):
-                        print(f"APP.PY: Call disconnected by {caller_phone}. Session stopped.")
-                        stop_event.set()
-                        break
-            
-            monitor_thread = Thread(target=monitor_call, daemon=True)
-            monitor_thread.start()
+            # Only monitor real calls, not test calls
+            if not TEST_MODE:
+                def monitor_call():
+                    while not stop_event.is_set():
+                        time.sleep(2)
+                        if not is_call_active(EXTENSION, caller_phone):
+                            print(f"APP.PY: Call disconnected by {caller_phone}. Session stopped.")
+                            stop_event.set()
+                            break
+                
+                monitor_thread = Thread(target=monitor_call, daemon=True)
+                monitor_thread.start()
+            else:
+                print("APP.PY: TEST MODE - Call monitoring disabled")
             
             assistant.run_with_event(stop_event)
-
 
         except Exception as e:
             print(f"[ERROR] {e}")
