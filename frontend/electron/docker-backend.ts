@@ -1,6 +1,6 @@
 /**
  * Docker Backend Manager
- * Manages the backend using Docker containers instead of direct Python execution
+ * Manages the backend using Docker containers via `docker compose`
  */
 
 import { spawn, ChildProcess } from 'child_process';
@@ -11,7 +11,6 @@ export class DockerBackendManager extends EventEmitter {
   private container: ChildProcess | null = null;
   public isRunning: boolean = false;
   private httpClient: AxiosInstance;
-  private platform: string = process.platform;
 
   constructor() {
     super();
@@ -33,24 +32,25 @@ export class DockerBackendManager extends EventEmitter {
     return new Promise((resolve) => {
       try {
         console.log('Starting Docker backend...');
-        
-        // Get the backend directory relative to frontend
+
         const backendDir = `${process.cwd()}/../backend`;
-        
-        // Use docker-compose to start the backend
-        const command = this.platform === 'win32' ? 'docker-compose.exe' : 'docker-compose';
-        
-        this.container = spawn(command, ['up', '--build'], {
-          cwd: backendDir,
-          stdio: ['inherit', 'pipe', 'pipe'],
-          shell: true,
-        });
+
+        // Always: docker compose up --build
+        this.container = spawn(
+          'docker',
+          ['compose', 'up', '--build'],
+          {
+            cwd: backendDir,
+            stdio: ['inherit', 'pipe', 'pipe'],
+            shell: false,
+          }
+        );
 
         if (!this.container) {
           throw new Error('Failed to spawn Docker process');
         }
 
-        // Handle output
+        // STDOUT
         this.container.stdout?.on('data', (data) => {
           const message = data.toString().trim();
           if (message) {
@@ -59,6 +59,7 @@ export class DockerBackendManager extends EventEmitter {
           }
         });
 
+        // STDERR
         this.container.stderr?.on('data', (data) => {
           const message = data.toString().trim();
           if (message) {
@@ -67,25 +68,27 @@ export class DockerBackendManager extends EventEmitter {
           }
         });
 
-        // Wait for container to be healthy
+        // Mark as running after 5 seconds
         setTimeout(() => {
           this.isRunning = true;
           console.log('Docker backend started');
           resolve(true);
         }, 5000);
 
+        // Process closed
         this.container.on('exit', (code) => {
-          console.log(`Docker container exited with code ${code}`);
+          console.log(`Docker compose exited with code ${code}`);
           this.isRunning = false;
           this.container = null;
           this.emit('stopped');
         });
 
         this.container.on('error', (err) => {
-          console.error('Docker process error:', err);
+          console.error('Docker compose process error:', err);
           this.emit('error', String(err));
           resolve(false);
         });
+
       } catch (err) {
         console.error('Error starting Docker backend:', err);
         this.emit('error', String(err));
@@ -106,18 +109,22 @@ export class DockerBackendManager extends EventEmitter {
     return new Promise((resolve) => {
       try {
         console.log('Stopping Docker backend...');
-        
+
         const backendDir = `${process.cwd()}/../backend`;
-        const command = this.platform === 'win32' ? 'docker-compose.exe' : 'docker-compose';
-        
-        const stopProcess = spawn(command, ['down'], {
-          cwd: backendDir,
-          stdio: 'pipe',
-          shell: true,
-        });
+
+        // Proper: docker compose down
+        const stopProcess = spawn(
+          'docker',
+          ['compose', 'down'],
+          {
+            cwd: backendDir,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: false,
+          }
+        );
 
         stopProcess.on('exit', (code) => {
-          console.log(`Docker stop command exited with code ${code}`);
+          console.log(`Docker stop exited with code ${code}`);
           this.isRunning = false;
           resolve(code === 0);
         });
@@ -127,13 +134,14 @@ export class DockerBackendManager extends EventEmitter {
           resolve(false);
         });
 
-        // If container doesn't stop after 10 seconds, kill it
+        // Kill hanging "up" process if needed
         setTimeout(() => {
           if (this.container) {
-            console.log('Force killing Docker container');
+            console.log('Force killing docker compose up process');
             this.container.kill('SIGKILL');
           }
         }, 10000);
+
       } catch (err) {
         console.error('Error stopping Docker:', err);
         resolve(false);

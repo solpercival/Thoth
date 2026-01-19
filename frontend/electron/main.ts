@@ -185,7 +185,7 @@ async function initializeApp(): Promise<void> {
 // Handle 3CX environment startup
 ipcMain.handle('start-3cx-environment', async (event) => {
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, '../../scripts/start_3cx_environment.sh');
+    const scriptPath = path.join(__dirname, '../../../scripts/start_3cx_environment.sh');
     
     console.log(`[3CX] Starting environment with script: ${scriptPath}`);
     

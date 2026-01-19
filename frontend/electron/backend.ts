@@ -36,121 +36,121 @@ export class BackendManager extends EventEmitter {
     return new Promise((resolve) => {
       try {
         console.log('Starting Docker backend...');
-        
-        // Get the backend directory
-        const backendDir = process.platform === 'win32'
-          ? `${process.cwd()}\\..\\backend`
-          : `${process.cwd()}/../backend`;
-        
-        const command = process.platform === 'win32' ? 'docker-compose.exe' : 'docker-compose';
-        
-        this.container = spawn(command, ['up', '--build'], {
+
+        // Ensure PATH for Linux/macOS Electron
+        process.env.PATH = `${process.env.PATH}:/usr/bin:/usr/local/bin`;
+
+        const backendDir =
+          this.platform === 'win32'
+            ? `${process.cwd()}\\..\\backend`
+            : `${process.cwd()}/../backend`;
+
+        // Unified docker compose command
+        const dockerCmd = this.platform === 'win32' ? 'docker.exe' : 'docker';
+        const args = ['compose', 'up', '--build'];
+
+        this.container = spawn(dockerCmd, args, {
           cwd: backendDir,
           stdio: ['ignore', 'pipe', 'pipe'],
           shell: true,
         });
 
-        if (!this.container) {
-          throw new Error('Failed to spawn docker-compose process');
-        }
+        if (!this.container) throw new Error('Failed to spawn docker process');
 
-        // Handle output
         this.container.stdout?.on('data', (data) => {
-          const message = data.toString().trim();
-          if (message) {
-            console.log(`[Docker Backend] ${message}`);
-            this.emit('log', message);
+          const msg = data.toString().trim();
+          if (msg) {
+            console.log(`[Docker Backend] ${msg}`);
+            this.emit('log', msg);
           }
         });
 
         this.container.stderr?.on('data', (data) => {
-          const message = data.toString().trim();
-          if (message) {
-            console.log(`[Docker Backend stderr] ${message}`);
-            this.emit('log', message);
+          const msg = data.toString().trim();
+          if (msg) {
+            console.log(`[Docker Backend stderr] ${msg}`);
+            this.emit('log', msg);
           }
         });
 
-        // Wait for the backend to be ready
+        // Health check logic
         const maxRetries = 30;
-        let retries = 0;
-        
-        const checkBackend = async () => {
+        let retryCount = 0;
+
+        const checkHealth = async () => {
           try {
-            const response = await this.httpClient.get('/health');
-            if (response.status === 200) {
-              console.log('Docker backend is ready');
+            const res = await this.httpClient.get('/health');
+            if (res.status === 200) {
+              console.log('Backend is ready');
               this.isRunning = true;
               this.emit('started');
-              resolve(true);
-              return;
+              return resolve(true);
             }
-          } catch (error) {
-            // Still waiting
-          }
-          
-          retries++;
-          if (retries < maxRetries) {
-            setTimeout(checkBackend, 2000);
+          } catch (_) {}
+
+          retryCount++;
+          if (retryCount < maxRetries) {
+            setTimeout(checkHealth, 2000);
           } else {
-            console.warn('Backend did not respond after 60 seconds');
-            this.isRunning = true; // Assume it's running even if health check failed
+            console.warn('Backend timed out; assuming running');
+            this.isRunning = true;
             this.emit('started');
             resolve(true);
           }
         };
 
-        // Start checking after 2 seconds
-        setTimeout(checkBackend, 2000);
+        setTimeout(checkHealth, 2000);
 
         this.container.on('exit', (code) => {
-          console.log(`Docker container exited with code ${code}`);
+          console.log(`Backend exited with code: ${code}`);
           this.isRunning = false;
           this.container = null;
           this.emit('stopped');
         });
 
         this.container.on('error', (err) => {
-          console.error('Docker process error:', err);
+          console.error('Docker error:', err);
           this.emit('error', String(err));
           resolve(false);
         });
+
       } catch (err) {
-        console.error('Error starting Docker backend:', err);
+        console.error('Error starting backend:', err);
         this.emit('error', String(err));
         resolve(false);
       }
     });
   }
 
-  /**
-   * Stop the Docker backend
-   */
   async stop(): Promise<boolean> {
     if (!this.isRunning) {
-      console.log('Docker backend not running');
+      console.log('Backend not running');
       return true;
     }
 
     return new Promise((resolve) => {
       try {
         console.log('Stopping Docker backend...');
-        
-        const backendDir = process.platform === 'win32'
-          ? `${process.cwd()}\\..\\backend`
-          : `${process.cwd()}/../backend`;
-        
-        const command = process.platform === 'win32' ? 'docker-compose.exe' : 'docker-compose';
-        
-        const stopProcess = spawn(command, ['down'], {
+
+        process.env.PATH = `${process.env.PATH}:/usr/bin:/usr/local/bin`;
+
+        const backendDir =
+          this.platform === 'win32'
+            ? `${process.cwd()}\\..\\backend`
+            : `${process.cwd()}/../backend`;
+
+        const dockerCmd = this.platform === 'win32' ? 'docker.exe' : 'docker';
+        const args = ['compose', 'down'];
+
+        const stop = spawn(dockerCmd, args, {
           cwd: backendDir,
           stdio: 'pipe',
           shell: true,
         });
 
-        const timeout = setTimeout(() => {
+        const killTimeout = setTimeout(() => {
           if (this.container) {
-            console.log('Force killing Docker container');
+            console.warn('Force killing Docker backend...');
             this.container.kill('SIGKILL');
           }
           this.isRunning = false;
@@ -158,27 +158,26 @@ export class BackendManager extends EventEmitter {
           resolve(true);
         }, 10000);
 
-        stopProcess.on('exit', (code) => {
-          clearTimeout(timeout);
-          console.log(`Docker stop command exited with code ${code}`);
+        stop.on('exit', (code) => {
+          clearTimeout(killTimeout);
+          console.log(`Docker stop exited: ${code}`);
           this.isRunning = false;
           this.emit('stopped');
           resolve(code === 0);
         });
 
-        stopProcess.on('error', (err) => {
-          clearTimeout(timeout);
-          console.error('Error stopping Docker:', err);
+        stop.on('error', (err) => {
+          clearTimeout(killTimeout);
+          console.error('Stop error:', err);
           this.isRunning = false;
           this.emit('stopped');
-          this.emit('error', String(err));
           resolve(false);
         });
+
       } catch (err) {
-        console.error('Error stopping Docker:', err);
+        console.error('Stop exception:', err);
         this.isRunning = false;
         this.emit('stopped');
-        this.emit('error', String(err));
         resolve(false);
       }
     });
