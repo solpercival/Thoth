@@ -130,14 +130,20 @@ function App() {
   return (
     <div style={{ 
       padding: '40px',
-      backgroundColor: '#282c34',
+      backgroundColor: '#282c34',  // #282c34
       color: 'white',
       minHeight: '100vh',
-      fontSize: '24px'
+      fontSize: '24px',
+      width: '100%',
+      // Centering part
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      textAlign: 'center'
     }}>
-      <h1>THOTH APPLICATION</h1>
-      <p>If you see this text, React is working!</p>
-      <img src="./tray-icon.png" alt="Icon" style={{ width: '200px', marginTop: '20px' }} />
+      <h1>HAHS AI POWERED CALL ASSISTANT</h1>
+      <p>Welcome to the dashboard!</p>
+      <img src="./hahs_logo.png" alt="Icon" style={{ width: '200px', marginTop: '20px' }} />
       
       <div style={{ marginTop: '40px' }}>
         <ToggleButton 
