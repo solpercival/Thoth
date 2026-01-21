@@ -142,3 +142,5 @@ def is_call_active(extension: str, caller_phone: str) -> bool:
 if __name__ == '__main__':
     # Close all calls on extension 100
     make_call("0147", "0415500152")
+
+    
