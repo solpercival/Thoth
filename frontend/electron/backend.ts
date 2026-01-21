@@ -43,13 +43,13 @@ export class BackendManager extends EventEmitter {
 
         // Get backend directory - from frontend/dist/electron -> backend
         const backendDir = path.join(process.cwd(), '..', 'backend');
-        const venvDir = path.join(process.cwd(), '..', 'venv');
+        const venvDir = path.join(process.cwd(), '..', '.venv');
         
         console.log('Backend directory:', backendDir);
         console.log('Venv directory:', venvDir);
 
         // Determine Python executable path from venv based on OS
-        // Windows: venv/Scripts/python.exe
+        // Windows: .venv/Scripts/python.exe
         // Linux/macOS: venv/bin/python
         let pythonExe: string;
         if (this.platform === 'win32') {
