@@ -589,7 +589,7 @@ class SystemAudioWhisperClient:
         self.transcription_thread.start()
 
         print("\n" + "="*60, flush=True)
-        print("✓ Transcription service started. Listening to system audio...", flush=True)
+        print("[OK] Transcription service started. Listening to system audio...", flush=True)
         print("="*60 + "\n", flush=True)
     
     def stop(self, llm_response_array):
