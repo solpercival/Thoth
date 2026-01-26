@@ -1,8 +1,12 @@
 import sys
+import os
+from dotenv import load_dotenv
 from pathlib import Path
 
 backend_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(backend_root))
+
+load_dotenv()  
 
 import asyncio
 import json
@@ -75,7 +79,8 @@ CRITICAL RULES:
 
 OPENING_PROMPT = "Hello. Thank you for calling Help at Hands Support. How can I help you today?"
 PROCESSING_PROMPT = "I'll look into that. Please wait."
-LLM_MODEL = "qwen3:8b"
+
+LLM_MODEL = os.getenv("LLM_MODEL")
 
 LOG_PREFIX = "CALL_ASSISTANT.PY:"
 
@@ -97,7 +102,9 @@ class CallAssistantV3:
             'is_cancellation': False,
         }
 
+    # Called every time Transcriber decides the user has finished speeaking
     def on_phrase_complete(self, phrase: str) -> None:
+        # Check before processing if the user has dropped the call
         if self.stop_event and self.stop_event.is_set():
             return
 
@@ -105,9 +112,11 @@ class CallAssistantV3:
         self.whisper_client.pause()
 
         try:
+            # Ask the LLM and store it in chat history
             llm_response = self.llm_client.ask_llm(phrase)
             self.llm_response_array.append(llm_response)
 
+            # Process the response
             response_to_speak = self._process_response(llm_response, phrase)
 
             if response_to_speak:
@@ -124,6 +133,7 @@ class CallAssistantV3:
             if not self.should_end_call:
                 self.whisper_client.resume()
 
+    # 
     def _process_response(self, llm_response: str, user_phrase: str) -> Optional[str]:
         if "<GETSHIFTS>" in llm_response:
             query = llm_response.replace("<GETSHIFTS>", "").strip()
@@ -153,9 +163,19 @@ class CallAssistantV3:
             self.should_end_call = True
             return "Thank you for calling. Good day."
 
+        # If there are no command tags, it indicates that this something to be said by the TTS
         return self._clean_response(llm_response)
 
     def _clean_response(self, response: str) -> str:
+        """
+        Helper function to clear up text so that they are TTS ready
+        
+        :param self: Description
+        :param response: Description
+        :type response: str
+        :return: Description
+        :rtype: str
+        """
         if "User:" in response:
             response = response.split("User:")[0].strip()
         if response.startswith("You:"):
@@ -163,15 +183,26 @@ class CallAssistantV3:
         return response
 
     def _handle_get_shifts(self, query: str) -> str:
+        """
+        The first command called in the steps to cancel a shift.
+        
+        :param self: Description
+        :param query: Description
+        :type query: str
+        :return: Description
+        :rtype: str
+        """
         if not self.caller_phone:
             return "I'm sorry, I don't have your phone number on file. Please contact support."
 
         try:
+            # 1. Call the backend to get shifts
             result = asyncio.run(test_integrated_workflow(self.caller_phone, query))
 
             if not result:
                 return "Sorry, I couldn't retrieve your shift information. Please try again later."
 
+            # 2. Extract the data from the backend parse it into our own custom context
             shifts = result.get('filtered_shifts', [])
             staff_info = result.get('staff', {})
             reasoning = result.get('reasoning', '')
@@ -183,6 +214,7 @@ class CallAssistantV3:
             if len(shifts) == 0:
                 shift_data = "[]"
             else:
+                # 3. If data exists, format it into a string for the LLM to understand
                 shift_data = json.dumps([{
                     'client': s['client_name'],
                     'date': s['date'],
@@ -190,15 +222,25 @@ class CallAssistantV3:
                     'shift_id': s['shift_id']
                 } for s in shifts])
 
+            # 4. Build system message for the LLM to update its knowledge
             system_message = f"SYSTEM: Found {len(shifts)} shift(s): {shift_data}"
             if self.context['is_cancellation']:
                 system_message += " | User wants to CANCEL a shift."
             else:
                 system_message += " | User wants to VIEW shift info."
 
+            # 5. Send it to the LLM as if it was us giving it information
+            # NOTE: The SYSTEM header here is important! In the system prompt above,
+            # We trained the LLM to expect two modes: SYSTEM and the regular user.
+            # Once the LLM recognises that SYSTEM header with the information we gave it
+            # Only then will it understand to move forward to step 3 in the cancellation process.
+            # AKA it returns the prompt that TTS will convert to audio to ask the user. It also will
+            # decide if it should output another command tag <..>
             llm_response = self.llm_client.ask_llm(system_message)
 
+            # 6. Process the response from step 5. This is the part where it calls the _handle_confirm_cancel() function in line.
             processed = self._process_response(llm_response, system_message)
+
             return processed if processed else self._clean_response(llm_response)
 
         except Exception as e:
@@ -206,6 +248,16 @@ class CallAssistantV3:
             return "Sorry, there was an error retrieving your shifts. Please try again."
 
     def _handle_confirm_cancel(self, shift_id: str) -> str:
+        """
+        To be called AFTER _handle_get_shifts() once the shift info has been retrieved and read
+        to the user by the LLM + TTS. 
+        
+        :param self: Description
+        :param shift_id: Description
+        :type shift_id: str
+        :return: Description
+        :rtype: str
+        """
         selected_shift = None
         for shift in self.context['current_shifts']:
             if shift['shift_id'] == shift_id:
@@ -218,6 +270,7 @@ class CallAssistantV3:
         if not selected_shift:
             return "Sorry, I couldn't find that shift. Let's start over. What would you like to do?"
 
+        # Shift has been selected, so now ask for a reason.
         self.context['selected_shift'] = selected_shift
 
         system_message = "SYSTEM: User confirmed cancellation. Now ask for the reason."
@@ -226,12 +279,23 @@ class CallAssistantV3:
         return self._clean_response(llm_response)
 
     def _handle_cancellation_reason(self, reason: str) -> str:
+        """
+        Docstring for _handle_cancellation_reason
+        
+        :param self: Description
+        :param reason: Description
+        :type reason: str
+        :return: Description
+        :rtype: str
+        """
         shift = self.context.get('selected_shift')
         if not shift:
             return "Sorry, I lost track of which shift to cancel. Let's start over."
 
+        # Tell the notifier service to notify given the details
         success = self._submit_cancellation(shift, reason)
 
+        # If successful, tell the LLM that it was a success and tell the LLM to ask the user for anything else 
         if success:
             system_message = (
                 f"SYSTEM: Cancellation successful. "
@@ -355,5 +419,6 @@ class CallAssistantV3:
 
 
 if __name__ == "__main__":
+    #print(LLM_MODEL)
     assistant = CallAssistantV3()
     assistant.run()

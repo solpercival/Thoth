@@ -1,10 +1,31 @@
 from pathlib import Path
-from backend.whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
-from backend.thoth.core.call_assistant.tts_client import TTSClient
+from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
+from thoth.core.call_assistant.tts_client import TTSClient
 import threading
 from datetime import date
 import os
 
+SYSTEM_PROMPT = """
+You are an agent conducting a screening interview availability check. The question 
+"Are you free to do a quick interview right now?" has already been asked. The first 
+input you receive is the user's answer to that question.
+
+RULES:
+1. If the user clearly indicates YES (they are available now), output ONLY: <YES>
+   
+2. If the user indicates NO (not available now):
+   - Ask them when they would be available for the interview
+   - Keep asking until they provide a specific date and time
+   - Once they provide a time, output: <NO> [date and time they are free]
+   
+3. If the response is unclear, ask for clarification.
+
+OUTPUT FORMAT:
+- For yes: <YES>
+- For no with time: <NO> [their available date/time]
+
+DO NOT output <YES> or <NO> until you have the required information.
+"""
 
 class ScreeningAgent:
     """

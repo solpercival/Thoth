@@ -13,7 +13,7 @@ import os
 import uuid
 
 from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extension, is_call_active
-from thoth.core.call_assistant.call_assistant_v3 import CallAssistantV3
+from thoth.core.call_assistant.call_assistant_v4 import CallAssistantV4
 
 ESTABLISH_DELAY = 1.0  # Delay before the greeting is played and the transcriber is activated
 EXTENSION = os.getenv('USED_EXTENSION')  # Extension of target number
@@ -72,7 +72,7 @@ def call_started():
 
     # Create and start assistant
     print("APP.PY: Creating agent")
-    assistant = CallAssistantV3(caller_phone=caller_phone, extension=EXTENSION)
+    assistant = CallAssistantV4(caller_phone=caller_phone, extension=EXTENSION)
     stop_event = Event()
 
     def run_assistant():
