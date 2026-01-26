@@ -74,7 +74,7 @@ class StreamingTTSClient:
                 self.virtual_device = default_device
             else:
                 self.virtual_device = cable_device
-                print(f"✓ Using virtual device: {cable_device['name']}")
+                print(f"[OK] Using virtual device: {cable_device['name']}")
 
         except ImportError:
             print("PyAudioWPatch not found, using regular PyAudio")
@@ -108,7 +108,7 @@ class StreamingTTSClient:
             # Fallback to default
             virtual_device = self.pyaudio.get_default_output_device_info()
         else:
-            print(f"✓ Using virtual device: {virtual_device['name']}")
+            print(f"[OK] Using virtual device: {virtual_device['name']}")
 
         self.virtual_device = virtual_device
 

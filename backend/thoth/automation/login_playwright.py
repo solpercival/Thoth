@@ -285,7 +285,7 @@ class PlaywrightAutoLogin:
                 expected_path = config.expected_url_after_login.rstrip("/")
                 current_path = self.page.url.rstrip("/")
                 if expected_path == current_path or current_path.startswith(expected_path + "/"):
-                    logger.info(f"✓ Already logged in! Skipping login form. Current URL: {self.page.url}")
+                    logger.info(f"[OK] Already logged in! Skipping login form. Current URL: {self.page.url}")
                     return True
 
             # Step 1: Fill username field
@@ -355,7 +355,7 @@ class PlaywrightAutoLogin:
                         try:
                             logger.info(f"Generating TOTP code for {service_name}...")
                             two_fa_code = get_admin_totp_code(service_name)
-                            logger.info("✓ TOTP code generated successfully")
+                            logger.info("[OK] TOTP code generated successfully")
                         except ValueError as e:
                             logger.warning(f"TOTP auto-generation failed: {e}")
                     
@@ -386,7 +386,7 @@ class PlaywrightAutoLogin:
                         try:
                             logger.info("Waiting for navigation to home page...")
                             await self.page.wait_for_url("**/home**", timeout=10000)
-                            logger.info(f"✓ Successfully navigated to home. URL: {self.page.url}")
+                            logger.info(f"[OK] Successfully navigated to home. URL: {self.page.url}")
                         except Exception as e:
                             logger.warning(f"Did not reach /home within timeout: {e}")
                             logger.info(f"Current URL after 2FA: {self.page.url}")
@@ -411,7 +411,7 @@ class PlaywrightAutoLogin:
                 current_path = current_url.rstrip("/")
                 
                 if expected_path == current_path or current_path.startswith(expected_path + "/"):
-                    logger.info(f"✓ Login successful! Current URL: {current_url}")
+                    logger.info(f"[OK] Login successful! Current URL: {current_url}")
                     await self._save_session(service_name)
                     return True
                 else:
@@ -423,7 +423,7 @@ class PlaywrightAutoLogin:
                     return False
             else:
                 current_url = self.page.url
-                logger.info(f"✓ Login form completed. Current URL: {current_url}")
+                logger.info(f"[OK] Login form completed. Current URL: {current_url}")
                 await self._save_session(service_name)
                 return True
 

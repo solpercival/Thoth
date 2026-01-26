@@ -364,7 +364,7 @@ class CallAssistantV3:
 
     def run(self):
         self.whisper_client = SystemAudioWhisperClient(
-            model="base",
+            model="small",
             phrase_timeout=5,
             on_phrase_complete=self.on_phrase_complete
         )
@@ -388,7 +388,7 @@ class CallAssistantV3:
         self.stop_event = stop_event
         try:
             self.whisper_client = SystemAudioWhisperClient(
-                model="base",
+                model="small",
                 phrase_timeout=5,
                 on_phrase_complete=self.on_phrase_complete
             )

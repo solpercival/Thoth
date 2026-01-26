@@ -34,7 +34,7 @@ async def run_prompt_login(service_name: str):
         password = getpass.getpass("Password: ")
         creds = {"username": username, "password": password}
     else:
-        print(f"✓ Fetched credentials from API for '{service_name}'")
+        print(f"[OK] Fetched credentials from API for '{service_name}'")
 
     # Generate TOTP code automatically from secret
     print("")
@@ -45,7 +45,7 @@ async def run_prompt_login(service_name: str):
         two_fa = input("Enter the 2FA code (or press Enter to skip): ").strip()
         two_fa_code = two_fa if two_fa else None
     else:
-        print(f"✓ Generated TOTP code automatically: {two_fa_code}")
+        print(f"[OK] Generated TOTP code automatically: {two_fa_code}")
 
     # Add two_fa_code into credentials dict expected by login_playwright
     creds_with_2fa = dict(creds)
@@ -64,7 +64,7 @@ async def run_prompt_login(service_name: str):
         print("Opening browser and attempting login...")
         success = await automation.login_with_retry(config=config, service_name=f"{service_name}_admin", llm_credentials=creds_with_2fa)
         if success:
-            print("✓ Login successful!")
+            print("[OK] Login successful!")
             print("\nBrowser window is open. Check if you're logged in properly.")
             print("Press Enter to close the browser...")
             input()
