@@ -338,6 +338,16 @@ class CallAssistantV4:
         combined_query = f"{original_query} {date_info}".strip()
         self._log(f"COMBINED QUERY: {combined_query}")
 
+        # Generate natural acknowledgment before fetching
+        action = "cancel" if self.context['is_cancellation'] else "check"
+        response = self._generate_natural_response(
+            situation=f"User provided the date ({date_info}) for the shift they want to {action}",
+            user_input=phrase,
+            required_info="You will look up their shifts now",
+            fallback="Let me look up your shifts."
+        )
+        self._speak(response)
+
         # Now fetch shifts with the date-enhanced query
         self._fetch_and_present_shifts(combined_query)
 
@@ -375,10 +385,10 @@ class CallAssistantV4:
             shift = self.context['selected_shift']
 
             if self.context['is_cancellation']:
-                self._speak(f"You selected the shift at {shift['client_name']} on {shift['date']} at {shift['time']}. Do you want to cancel this shift?")
+                self._speak(f"You selected the shift for {shift['client_name']} on {shift['date']} at {shift['time']}. Do you want to cancel this shift?")
                 self._transition_to(State.AWAITING_CONFIRMATION)
             else:
-                self._speak(f"That's the shift at {shift['client_name']} on {shift['date']} at {shift['time']}. Is there anything else?")
+                self._speak(f"That's the shift for {shift['client_name']} on {shift['date']} at {shift['time']}. Is there anything else?")
                 self._reset_and_listen()
 
     def _handle_awaiting_confirmation(self, phrase: str) -> None:
@@ -428,7 +438,7 @@ class CallAssistantV4:
 
         if success:
             self._speak(
-                f"Done. Your shift at {shift['client_name']} on {shift['date']} "
+                f"Okay. Your shift for {shift['client_name']} on {shift['date']} "
                 f"has been cancelled. Is there anything else I can help you with?"
             )
         else:
@@ -467,6 +477,63 @@ class CallAssistantV4:
             return True
 
         return False
+
+    # =========================================================================
+    # LLM NATURAL RESPONSE GENERATION
+    # =========================================================================
+
+    def _generate_natural_response(
+        self,
+        situation: str,
+        user_input: str,
+        required_info: str = "",
+        fallback: str = ""
+    ) -> str:
+        """
+        Generate a natural, empathetic response using the LLM.
+
+        Args:
+            situation: What's happening (e.g., "user wants to cancel shift")
+            user_input: What the user said
+            required_info: Information that MUST be included in the response
+            fallback: Fallback message if LLM fails
+
+        Returns:
+            Generated natural response, or fallback if generation fails
+        """
+        prompt = f"""You are a friendly phone support agent for a staffing company. Generate a brief, natural response.
+
+Situation: {situation}
+User said: "{user_input}"
+{f'You MUST include this information naturally: {required_info}' if required_info else ''}
+
+Rules:
+- Be empathetic and conversational (not robotic)
+- Keep it SHORT (1-2 sentences max, under 30 words)
+- Don't be overly formal or use corporate speak
+- If the user mentions feeling unwell or has a problem, briefly acknowledge it
+- End with the action you're taking or a question if needed
+
+Response (just the text, nothing else):"""
+
+        try:
+            self.llm.set_system_prompt(prompt)
+            response = self.llm.ask_llm(user_input).strip()
+
+            # Remove quotes if the LLM wrapped the response in them
+            if response.startswith('"') and response.endswith('"'):
+                response = response[1:-1]
+
+            # Basic validation - if response is too long or empty, use fallback
+            if not response or len(response) > 200:
+                self._log(f"Natural response invalid, using fallback")
+                return fallback if fallback else response[:200]
+
+            return response
+
+        except Exception as e:
+            self._log(f"Natural response generation failed: {e}")
+            return fallback
 
     # =========================================================================
     # LLM CLASSIFIER HELPER FUNCTIONS
@@ -540,11 +607,26 @@ class CallAssistantV4:
         self._log(f"HAS DATE INFO: {has_date}")
 
         if has_date:
-            # Date info present - proceed to fetch shifts
+            # Date info present - generate natural acknowledgment and fetch shifts
+            action = "cancel" if self.context['is_cancellation'] else "check"
+            response = self._generate_natural_response(
+                situation=f"User wants to {action} a shift and provided a date/time",
+                user_input=phrase,
+                required_info="You will look up their shifts now",
+                fallback="Let me look up your shifts."
+            )
+            self._speak(response)
             self._fetch_and_present_shifts(phrase)
         else:
-            # No date info - ask for clarification
-            self._speak("Which day are you asking about?")
+            # No date info - generate natural response asking for date
+            action = "cancel" if self.context['is_cancellation'] else "check"
+            response = self._generate_natural_response(
+                situation=f"User wants to {action} a shift but didn't specify which day",
+                user_input=phrase,
+                required_info="Ask which day they are referring to",
+                fallback="Which day are you asking about?"
+            )
+            self._speak(response)
             self._transition_to(State.AWAITING_DATE_CLARIFICATION)
 
 
@@ -555,7 +637,6 @@ class CallAssistantV4:
             self._reset_and_listen()
             return
 
-        self._speak("Let me look up your shifts.")
         self._transition_to(State.FETCHING_SHIFTS)
 
         try:
