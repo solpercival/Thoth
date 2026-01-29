@@ -4,7 +4,7 @@ import ollama
 # Input a prompt into the llm, default model is the lightest one. Returns the llm response
 class OllamaClient:
 
-    def __init__(self, model: str = 'qwen3:8b', system_prompt: str = None, enable_thinking: bool = False):
+    def __init__(self, model: str = 'qwen3:8b', system_prompt: str = None, enable_thinking: bool = True):
         self.model_name = model
         self.messages = []
         self.enable_thinking = enable_thinking

@@ -265,9 +265,9 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             print(f"[OK] Total Shifts: {len(all_shifts)}")
             print(f"[OK] Shifts in Date Range: {len(filtered_shifts)}")
             print("="*70)
-            print("\n[*] Browser will stay open for 10 seconds for inspection...")
+            print("\n[*] Browser will stay open for 5 seconds for inspection...")
             print("[*] Check the browser window to see if login and TOTP were successful")
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
             print("[*] Closing browser...\n")
             
             return {

@@ -62,7 +62,7 @@ CURRENT STATE: {state}
 
 SPECIAL COMMANDS (output these when appropriate):
 - <FETCH>date_query - When you have enough info to fetch the user's shifts
-- <SUBMIT>shift_id|reason - When you have shift selection AND cancellation reason
+- <SUBMIT>shift_id|reason> - When you have shift selection AND cancellation reason (MUST close with >)
 - <DONE> - When the current task is complete and you should reset
 - <END> - When the user wants to end the call
 
@@ -81,13 +81,13 @@ CRITICAL RULES:
 
 EXAMPLES:
 User: "I need to cancel my shift tomorrow"
-You: "I understand. Let me look up your shift for tomorrow. <FETCH>tomorrow (since the user asks for tomorrow's shift)"
+You: "I understand. Let me look up your shift for tomorrow. <FETCH>tomorrow"
 
 User: "The first one" (after being shown multiple shifts)
 You: "Okay, the shift at McDonald's on January 30th. What's your reason for cancellation?"
 
 User: "I'm feeling sick"
-You: "I'm sorry to hear that (say this because the user says he is sick). I'll cancel that shift for you now. <SUBMIT>shift_123| reason why the user wants to cancel, in this case, because he is sick."
+You: "I'm sorry to hear that. I'll let the rostering team know about your cancellation. <SUBMIT>123456|I'm feeling sick> Is there anything else I can help you with?"
 
 User: "No, that's all"
 You: "Thank you for calling. Have a great day! <END>"
@@ -113,7 +113,7 @@ CONFIRMING_DETAILS_INSTRUCTIONS = """STATE: CONFIRMING_DETAILS
 AVAILABLE SHIFTS:
 {shifts_formatted}
 
-Make sure you Omit the ID and just present the client name and the date and time.
+Make sure you Omit the ID and just tell them about  the client name and the date and time.
 
 Your goal: Confirm which shift to cancel and get the cancellation reason.
 
@@ -122,11 +122,14 @@ What you need:
 2. The reason for cancellation
 
 When you have BOTH the shift selection AND reason:
-- Output: <SUBMIT>shift_id|reason (for example, "<SUBMIT>shift_123| reason why the user wants to cancel, in this case, because he is sick.")
+- Output: <SUBMIT>shift_id|reason> (IMPORTANT: Use the numeric ID only, no "shift_" prefix. Close with >)
+- Example: "<SUBMIT>207414|I'm sick> Is there anything else?"
 
 After successful cancellation:
+- Tell the user that the rostering team has been notified and that they might get in touch
 - Ask if there's anything else
 - If they say no or are done: Output <DONE>
+- Do not assume that the user wants to end the call just because the shift cancellation has been confirmed.
 
 If the user wants to end the call:
 - Output: <END>
@@ -327,10 +330,12 @@ class CallAssistantV5:
         # Parse the response for commands
         parsed = self._parse_llm_response(llm_response)
 
-        # Speak the text part (if any)
-        if parsed['text']:
-            self._add_to_history("assistant", parsed['text'])
-            self._speak(parsed['text'])
+        # For SUBMIT command, don't speak yet - wait until after submission
+        # For other commands or no command, speak the text immediately
+        if parsed['command'] != 'SUBMIT':
+            if parsed['text']:
+                self._add_to_history("assistant", parsed['text'])
+                self._speak(parsed['text'])
 
         # Handle commands
         if parsed['command'] == 'END':
@@ -488,10 +493,13 @@ class CallAssistantV5:
         """
         Parse LLM response for special commands and text to speak.
 
+        Handles multiple tags in the same response (e.g., <SUBMIT>...<END>).
+        Removes ALL tags from text, then determines primary command.
+
         Returns dict with:
         - 'command': The command tag found (FETCH, SUBMIT, DONE, END, or None)
         - 'data': Associated data with the command
-        - 'text': Text to speak (with commands removed)
+        - 'text': Text to speak (with ALL commands removed)
         """
         import re
 
@@ -501,35 +509,45 @@ class CallAssistantV5:
             'text': llm_response
         }
 
-        # Check for <END>
-        if '<END>' in llm_response:
+        # First, extract command data (before removing tags)
+        submit_match = re.search(r'<SUBMIT>(.+?)\|(.+?)(?:>|<|$)', llm_response)
+        fetch_match = re.search(r'<FETCH>(.+?)(?:>|<|$)', llm_response)
+        has_done = '<DONE>' in llm_response
+        has_end = '<END>' in llm_response
+
+        # Remove ALL tags from text (do this first, before determining command priority)
+        clean_text = llm_response
+        clean_text = re.sub(r'<SUBMIT>.+?(?:>|<|$)', '', clean_text)
+        clean_text = re.sub(r'<FETCH>.+?(?:>|<|$)', '', clean_text)
+        clean_text = clean_text.replace('<DONE>', '')
+        clean_text = clean_text.replace('<END>', '')
+        result['text'] = clean_text.strip()
+
+        # Determine primary command (priority order: END > SUBMIT > FETCH > DONE)
+        if has_end:
             result['command'] = 'END'
-            result['text'] = llm_response.replace('<END>', '').strip()
             return result
 
-        # Check for <DONE>
-        if '<DONE>' in llm_response:
-            result['command'] = 'DONE'
-            result['text'] = llm_response.replace('<DONE>', '').strip()
+        if submit_match:
+            result['command'] = 'SUBMIT'
+            # Strip "shift_" prefix if LLM added it
+            shift_id = submit_match.group(1).strip()
+            if shift_id.lower().startswith('shift_'):
+                shift_id = shift_id[6:]  # Remove "shift_" prefix
+
+            result['data'] = {
+                'shift_id': shift_id,
+                'reason': submit_match.group(2).strip()
+            }
             return result
 
-        # Check for <FETCH>query
-        fetch_match = re.search(r'<FETCH>(.+?)(?:<|$)', llm_response)
         if fetch_match:
             result['command'] = 'FETCH'
             result['data'] = fetch_match.group(1).strip()
-            result['text'] = re.sub(r'<FETCH>.+?(?:<|$)', '', llm_response).strip()
             return result
 
-        # Check for <SUBMIT>shift_id|reason
-        submit_match = re.search(r'<SUBMIT>(.+?)\|(.+?)(?:<|$)', llm_response)
-        if submit_match:
-            result['command'] = 'SUBMIT'
-            result['data'] = {
-                'shift_id': submit_match.group(1).strip(),
-                'reason': submit_match.group(2).strip()
-            }
-            result['text'] = re.sub(r'<SUBMIT>.+?(?:<|$)', '', llm_response).strip()
+        if has_done:
+            result['command'] = 'DONE'
             return result
 
         # No command found - just regular text
@@ -627,7 +645,7 @@ class CallAssistantV5:
 
         try:
             # Initial greeting
-            greeting = "Hello, thank you for calling. How can I help you today?"
+            greeting = "Hello, thank you for calling Help at Hand Support. How can I help you today?"
             self._speak(greeting)
             self._add_to_history("assistant", greeting)
 
