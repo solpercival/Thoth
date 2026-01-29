@@ -6,8 +6,9 @@ import sys
 import subprocess
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 import requests
+import time
 
 
 class MainWindow(QWidget):
@@ -19,6 +20,9 @@ class MainWindow(QWidget):
         # State variables
         self.is_backend_on = False
         self.process = None
+        self.health_check_timer = None
+        self.health_check_start_time = None
+        self.health_check_timeout = 15  # seconds
 
         ###############################################################################
         # UI SETUP
@@ -72,7 +76,8 @@ class MainWindow(QWidget):
         print("Button clicked!")
 
         if not self.is_backend_on:
-            # UI Changes
+            # UI Changes, set it to starting... Let the functions inside _start_backend() change 
+            # the button to either STOP or START (FAILED)
             self.button.setText("Starting...")
             self.button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
             self.button.setEnabled(False)
@@ -94,7 +99,7 @@ class MainWindow(QWidget):
     def _start_backend(self):
         # Get the path to app_v3.py
         project_root = Path(__file__).parent.parent  # frontend_qt -> Thoth
-        script_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "app_v3.py"
+        script_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "app_v5.py"
 
         # Get python from venv
         if sys.platform == "win32":
@@ -110,12 +115,65 @@ class MainWindow(QWidget):
             cwd=str(script_path.parent),  # Run from the script's directory
         )
 
+        # Start health check polling
+        self.health_check_start_time = time.time()
+        self.health_check_timer = QTimer()
+        self.health_check_timer.timeout.connect(self._check_backend_health)
+        self.health_check_timer.start(500)  # Check every 500ms
+
+
+    def _check_backend_health(self):
+        """Poll the backend health endpoint until it responds or times out"""
+        elapsed_time = time.time() - self.health_check_start_time
+
+        # Check for timeout
+        if elapsed_time > self.health_check_timeout:
+            print("[FRONTEND QT] Backend startup timeout!")
+            self.health_check_timer.stop()
+            self.button.setText("Start (Failed)")
+            self.button.setStyleSheet("background-color: #ffc107; padding: 10px; border-radius: 5px;")
+            self.button.setEnabled(True)
+
+            # Clean up the process
+            if self.process:
+                self.process.terminate()
+                self.process = None
+            return
+
+        # Try to ping the health endpoint
+        try:
+            response = requests.get("http://localhost:5000/health", timeout=1)
+            if response.status_code == 200:
+                print(f"[FRONTEND QT] Backend started successfully in {elapsed_time:.2f}s")
+                self.health_check_timer.stop()
+
+                # Update state and UI to running
+                self.is_backend_on = True
+                self.button.setText("Stop")
+                self.button.setStyleSheet("background-color: #dc3545; padding: 10px; border-radius: 5px;")
+                self.button.setEnabled(True)
+        except (requests.ConnectionError, requests.Timeout):
+            # Backend not ready yet, keep polling
+            pass
+        except Exception as e:
+            print(f"[FRONTEND QT] Error checking health: {e}")
 
     def _stop_backend(self):
         # Check if process is running and exists
         if hasattr(self, 'process') and self.process:
             print("[FRONTEND QT] Stopping backend...")
             self.process.terminate()
+
+            # Wait for process to terminate (timeout after 3 seconds)
+            try:
+                self.process.wait(timeout=3)
+                print("[FRONTEND QT] Backend stopped gracefully")
+            except subprocess.TimeoutExpired:
+                print("[FRONTEND QT] Force killing backend...")
+                self.process.kill()
+                self.process.wait()
+                print("[FRONTEND QT] Backend force stopped")
+
             self.process = None
     
     def _reset_button(self):
