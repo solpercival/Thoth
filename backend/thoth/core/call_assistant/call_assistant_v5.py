@@ -1,15 +1,14 @@
 """
-Call Assistant V5 - Simplified LLM-Driven Conversation
+Call Assistant V5 - LLM-Driven with Simplified State Machine
 
 Design principles:
-1. Only 2 states - LLM handles the conversation flow within each state
-2. Tag-based transitions - LLM signals state changes via special tags
-3. Chat history maintained - enables natural, contextual conversations
-4. LLM decides when enough information is gathered
+1. Only 2 states - LLM handles conversation flow within each state
+2. LLM outputs tags to signal state transitions (<FETCH>, <SUBMIT>, <DONE>, <END>)
+3. Chat history maintained - LLM has full context of conversation
+4. Single tweakable system prompt controls all behavior
 """
 
 import sys
-import os
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -19,7 +18,7 @@ sys.path.insert(0, str(backend_root))
 load_dotenv()
 
 import asyncio
-import re
+import os
 from time import sleep
 from threading import Event
 from enum import Enum, auto
@@ -52,105 +51,129 @@ class State(Enum):
 
 
 # =============================================================================
-# SYSTEM PROMPTS
+# SYSTEM PROMPT - Controls all LLM behavior
 # =============================================================================
 
-PROMPT_GATHERING_INFO = """You are a friendly phone support agent for a healthcare staffing company called "Helping Hands".
-Your job is to help staff members cancel their upcoming shifts.
+SYSTEM_PROMPT = """You are a professional call center agent handling shift cancellation requests.
 
-CURRENT TASK:
-- Understand what the user wants (they likely want to cancel a shift)
-- Get the DATE or TIME PERIOD for the shift they want to cancel
-- Be empathetic and conversational
+CURRENT STATE: {state}
 
-CONVERSATION SO FAR:
+{state_instructions}
+
+SPECIAL COMMANDS (output these when appropriate):
+- <FETCH>date_query - When you have enough info to fetch the user's shifts
+- <SUBMIT>shift_id|reason - When you have shift selection AND cancellation reason
+- <DONE> - When the current task is complete and you should reset
+- <END> - When the user wants to end the call
+
+CONVERSATION HISTORY:
 {chat_history}
 
-RULES:
-1. Keep responses SHORT (1-2 sentences, under 30 words)
-2. Be warm and empathetic - if they mention being unwell, acknowledge it briefly
-3. Don't be robotic or overly formal
-4. If user wants something other than cancelling a shift, politely explain you can only help with shift cancellations or transfer them
+{context_info}
 
-WHEN YOU HAVE THE DATE/TIME INFO:
-Once the user has clearly specified WHEN their shift is (e.g., "tomorrow", "Monday", "next week", "January 15th"), output:
-<FETCH>the date or time description here</FETCH>
+CRITICAL RULES:
+- Be natural, conversational, and empathetic
+- Show empathy if user mentions being sick/unwell
+- ONLY output your IMMEDIATE response - NEVER predict user's next response
+- NEVER include "User:" or hypothetical dialogue in your output
+- Maintain context - remember what you've asked and what the user said
+- When you output a special command, include it naturally in your response
 
-Examples of when to output <FETCH>:
-- User: "I need to cancel my shift tomorrow" → Got it, let me look that up for you. <FETCH>tomorrow</FETCH>
-- User: "Cancel my Monday shift" → Sure thing, let me look at your monday shifts. <FETCH>Monday</FETCH>
-- User: "I can't make it to work next week" → I'll take a look at which shifts you have then<FETCH>next week</FETCH>
+EXAMPLES:
+User: "I need to cancel my shift tomorrow"
+You: "I understand. Let me look up your shift for tomorrow. <FETCH>tomorrow (since the user asks for tomorrow's shift)"
 
-DO NOT output <FETCH> if the user hasn't mentioned when. Instead, ask them which day.
+User: "The first one" (after being shown multiple shifts)
+You: "Okay, the shift at McDonald's on January 30th. What's your reason for cancellation?"
 
-USER JUST SAID: "{user_input}"
+User: "I'm feeling sick"
+You: "I'm sorry to hear that (say this because the user says he is sick). I'll cancel that shift for you now. <SUBMIT>shift_123| reason why the user wants to cancel, in this case, because he is sick."
 
-Your response:"""
+User: "No, that's all"
+You: "Thank you for calling. Have a great day! <END>"
+"""
+
+GATHERING_INFO_INSTRUCTIONS = """STATE: GATHERING_INFO
+
+Your goal: Collect enough information to fetch the user's shifts.
+
+What you need:
+- Understand if they want to cancel a shift or just query their schedule
+- Get date/time information (tomorrow, Monday, next week, specific date, etc.)
+
+When you have the date/time information:
+- Output: <FETCH>date_query (e.g., "<FETCH>tomorrow" or "<FETCH>next Monday")
+
+If the user wants to end the call at any point:
+- Output: <END>
+"""
+
+CONFIRMING_DETAILS_INSTRUCTIONS = """STATE: CONFIRMING_DETAILS
+
+AVAILABLE SHIFTS:
+{shifts_formatted}
+
+Make sure you Omit the ID and just present the client name and the date and time.
+
+Your goal: Confirm which shift to cancel and get the cancellation reason.
+
+What you need:
+1. Which shift they want to cancel (if multiple shifts)
+2. The reason for cancellation
+
+When you have BOTH the shift selection AND reason:
+- Output: <SUBMIT>shift_id|reason (for example, "<SUBMIT>shift_123| reason why the user wants to cancel, in this case, because he is sick.")
+
+After successful cancellation:
+- Ask if there's anything else
+- If they say no or are done: Output <DONE>
+
+If the user wants to end the call:
+- Output: <END>
+"""
 
 
-PROMPT_CONFIRMING_DETAILS = """You are a friendly phone support agent helping a staff member cancel a shift.
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 
-SHIFTS FOUND FOR THIS USER:
-{shifts_info}
+LOG_PREFIX = "[CALL_ASSISTANT_V5]"
 
-CONVERSATION SO FAR:
-{chat_history}
-
-CURRENT TASK:
-1. If there are MULTIPLE shifts: Ask which one they want to cancel (refer to them by number or details)
-2. Once a shift is identified: Confirm it's the correct one
-3. Ask for their REASON for cancellation
-4. Once you have confirmation AND reason: Output the completion tag
-
-RULES:
-1. Keep responses SHORT (1-2 sentences)
-2. Be conversational and empathetic
-3. Don't ask for the reason until they've confirmed which shift
-
-WHEN YOU HAVE EVERYTHING:
-Once the user has:
-- Confirmed which shift (if multiple)
-- Said YES to cancelling it
-- Provided a reason
-
-Output: <DONE>shift_number|their reason</DONE>
-
-Examples:
-- User confirmed shift 1, reason is "I'm sick" → I'm sorry to hear that. <DONE>1|I'm sick</DONE>
-- User confirmed shift 2, reason is "family emergency" → Understood, I hope its not too bad. <DONE>2|family emergency</DONE>
-- Only 1 shift and user said "yes, cancel it because I have a doctor's appointment" → Got it.<DONE>1|doctor's appointment</DONE>
-
-DO NOT output <DONE> until you have BOTH confirmation AND reason.
-
-USER JUST SAID: "{user_input}"
-
-Your response:"""
+# Test mode configuration
+TEST_MODE = True
+TEST_NUMBER = "0411 305 401"  # Replace with your test number
 
 
 # =============================================================================
 # MAIN CLASS
 # =============================================================================
 
-LOG_PREFIX = "[CALL_ASSISTANT_V5]"
-
 
 class CallAssistantV5:
     """
-    Simplified voice assistant with LLM-driven conversation flow.
+    LLM-driven voice assistant with simplified 2-state machine.
 
     Key differences from V4:
     - Only 2 states instead of 7
-    - LLM decides when to transition (via tags)
-    - Chat history maintained for natural conversation
-    - LLM handles all the "is this enough info?" decisions
+    - LLM decides when to transition via output tags
+    - Chat history maintained - LLM has full conversation context
+    - Single system prompt controls all behavior
     """
 
     def __init__(self, caller_phone: Optional[str] = None, extension: Optional[str] = None):
-        self.caller_phone = caller_phone
+
+        if TEST_MODE:
+            self.caller_phone = TEST_NUMBER
+        else:
+            self.caller_phone = caller_phone
+
         self.extension = extension
 
-        # LLM client
-        self.llm = OllamaClient(model=os.getenv("LLM_MODEL", "qwen3:8b"))
+        # LLM client - will use dynamic system prompts based on state
+        self.llm_client = OllamaClient(
+            model=os.getenv("LLM_MODEL", "qwen3:8b"),
+            system_prompt=""  # Will be set dynamically
+        )
 
         # Audio clients
         self.whisper_client: SystemAudioWhisperClient = None
@@ -164,10 +187,8 @@ class CallAssistantV5:
 
         # Context - stores extracted data
         self.context: Dict[str, Any] = {
-            'date_query': None,       # Date/time the user mentioned
             'shifts': [],             # Shifts retrieved from backend
             'selected_shift': None,   # The shift user confirmed
-            'reason': None,           # Cancellation reason
             'staff_info': {},         # Staff info for email
         }
 
@@ -224,36 +245,32 @@ class CallAssistantV5:
         """
         State: GATHERING_INFO
 
-        LLM converses with user to understand their intent and gather date info.
-        When LLM determines enough info is gathered, it outputs <FETCH>date_query</FETCH>
+        LLM determines when enough info is collected and outputs <FETCH>query tag.
         """
         # Add user message to chat history
         self._add_to_history("user", phrase)
 
-        # Build the prompt with chat history
-        prompt = PROMPT_GATHERING_INFO.format(
-            chat_history=self._format_chat_history(),
-            user_input=phrase
-        )
+        # Ask LLM to process the user input
+        llm_response = self._ask_llm(phrase)
+        self._log(f"LLM Response: {llm_response}")
 
-        # Get LLM response
-        self.llm.set_system_prompt(prompt)
-        response = self.llm.ask_llm(phrase).strip()
-        self._log(f"LLM RAW RESPONSE: {response}")
+        # Parse the response for commands
+        parsed = self._parse_llm_response(llm_response)
 
-        # Check for <FETCH> tag, returns None if LLM thinks user did not provide date
-        date_query = self._parse_tag(response, "FETCH")
+        # Speak the text part (if any)
+        if parsed['text']:
+            self._add_to_history("assistant", parsed['text'])
+            self._speak(parsed['text'])
 
-        if date_query:
-            # LLM determined we have enough info - fetch shifts
-            self._log(f"FETCH tag found with date: {date_query}")
-            self.context['date_query'] = date_query
+        # Handle commands
+        if parsed['command'] == 'END':
+            self._end_call()
+            return
 
-            # Get the spoken part (without the tag)
-            spoken_response = self._remove_tags(response)
-            if spoken_response:
-                self._add_to_history("assistant", spoken_response)
-                self._speak(spoken_response)
+        elif parsed['command'] == 'FETCH':
+            # LLM decided it has enough info to fetch shifts
+            date_query = parsed['data']
+            self._log(f"Fetching shifts for: {date_query}")
 
             # Fetch shifts from backend
             success = self._fetch_shifts(date_query)
@@ -262,142 +279,123 @@ class CallAssistantV5:
                 # Transition to confirming details
                 self._transition_to(State.CONFIRMING_DETAILS)
 
-                # Let the LLM present the shifts naturally
-                self._present_shifts_naturally()
+                # Let LLM present the shifts in the next interaction
+                # by asking it to respond to a system message
+                system_msg = f"SYSTEM: Found {len(self.context['shifts'])} shift(s). Present them to the user."
+                self._add_to_history("system", system_msg)
+
+                # Ask LLM to present the shifts
+                presentation = self._ask_llm(system_msg)
+                parsed_presentation = self._parse_llm_response(presentation)
+
+                if parsed_presentation['text']:
+                    self._add_to_history("assistant", parsed_presentation['text'])
+                    self._speak(parsed_presentation['text'])
 
             elif success and not self.context['shifts']:
-                # No shifts found for that date
-                no_shifts_msg = "I couldn't find any shifts for that time period. Is there another date you'd like me to check?"
-                self._add_to_history("assistant", no_shifts_msg)
-                self._speak(no_shifts_msg)
-                # Stay in GATHERING_INFO to try again
+                # No shifts found
+                system_msg = "SYSTEM: No shifts found for that time period. Tell the user and ask if they want to check another date."
+                self._add_to_history("system", system_msg)
+
+                no_shifts_response = self._ask_llm(system_msg)
+                parsed_no_shifts = self._parse_llm_response(no_shifts_response)
+
+                if parsed_no_shifts['text']:
+                    self._add_to_history("assistant", parsed_no_shifts['text'])
+                    self._speak(parsed_no_shifts['text'])
 
             else:
                 # Error fetching shifts
                 error_msg = "Sorry, I had trouble looking up your shifts. Could you tell me the date again?"
                 self._add_to_history("assistant", error_msg)
                 self._speak(error_msg)
-                # Stay in GATHERING_INFO
 
-        else:
-            # No <FETCH> tag - LLM is still gathering info
-            # Speak the response and stay in current state
-            self._add_to_history("assistant", response)
-            self._speak(response)
-
-    def _present_shifts_naturally(self) -> None:
-        """
-        After fetching shifts, let the LLM present them naturally.
-        This is the first message in CONFIRMING_DETAILS state.
-        """
-        shifts = self.context.get('shifts', [])
-        if not shifts:
-            return
-
-        # Build a simple prompt to present the shifts
-        if len(shifts) == 1:
-            shift = shifts[0]
-            presentation = f"I found your shift at {shift.get('client_name')} on {shift.get('date')} at {shift.get('time')}. Would you like to cancel this one?"
-        else:
-            presentation = f"I found {len(shifts)} shifts. "
-            for i, shift in enumerate(shifts, 1):
-                presentation += f"{i}: {shift.get('client_name')} on {shift.get('date')} at {shift.get('time')}. "
-            presentation += "Which one would you like to cancel?"
-
-        self._add_to_history("assistant", presentation)
-        self._speak(presentation)
 
     def _handle_confirming_details(self, phrase: str) -> None:
         """
         State: CONFIRMING_DETAILS
 
-        LLM presents shifts and confirms which one to cancel + reason.
-        When confirmed, outputs <DONE>shift_index|reason</DONE>
+        LLM determines when it has shift selection and reason, then outputs <SUBMIT>shift_id|reason tag.
         """
         # Add user message to chat history
         self._add_to_history("user", phrase)
 
-        # Build the prompt with shifts info and chat history
-        prompt = PROMPT_CONFIRMING_DETAILS.format(
-            shifts_info=self._format_shifts_for_prompt(),
-            chat_history=self._format_chat_history(),
-            user_input=phrase
-        )
+        # Ask LLM to process the user input
+        llm_response = self._ask_llm(phrase)
+        self._log(f"LLM Response: {llm_response}")
 
-        # Get LLM response
-        self.llm.set_system_prompt(prompt)
-        response = self.llm.ask_llm(phrase).strip()
-        self._log(f"LLM RAW RESPONSE: {response}")
+        # Parse the response for commands
+        parsed = self._parse_llm_response(llm_response)
 
-        # Check for <DONE> tag
-        done_content = self._parse_tag(response, "DONE")
+        # Speak the text part (if any)
+        if parsed['text']:
+            self._add_to_history("assistant", parsed['text'])
+            self._speak(parsed['text'])
 
-        if done_content:
-            # LLM determined we have everything - process cancellation
-            self._log(f"DONE tag found: {done_content}")
+        # Handle commands
+        if parsed['command'] == 'END':
+            self._end_call()
+            return
 
-            # Parse the content: shift_number|reason
-            parts = done_content.split("|", 1)
-            if len(parts) == 2:
-                try:
-                    shift_index = int(parts[0].strip()) - 1  # Convert to 0-indexed
-                    reason = parts[1].strip()
+        elif parsed['command'] == 'DONE':
+            # User is done with current task, reset to beginning
+            self._reset_conversation()
+            return
 
-                    shifts = self.context.get('shifts', [])
-                    if 0 <= shift_index < len(shifts):
-                        self.context['selected_shift'] = shifts[shift_index]
-                        self.context['reason'] = reason
+        elif parsed['command'] == 'SUBMIT':
+            # LLM has shift selection and reason
+            shift_id = parsed['data']['shift_id']
+            reason = parsed['data']['reason']
 
-                        # Get the spoken part (without the tag)
-                        spoken_response = self._remove_tags(response)
-                        if spoken_response:
-                            self._add_to_history("assistant", spoken_response)
-                            self._speak(spoken_response)
+            self._log(f"Submitting cancellation: shift={shift_id}, reason={reason}")
 
-                        # Submit the cancellation
-                        success = self._submit_cancellation()
+            # Find the shift by ID
+            selected_shift = None
+            for shift in self.context['shifts']:
+                if shift.get('shift_id') == shift_id:
+                    selected_shift = shift
+                    break
 
-                        if success:
-                            # Cancellation successful
-                            shift = self.context['selected_shift']
-                            success_msg = f"Done. Your shift at {shift.get('client_name')} on {shift.get('date')} has been cancelled. Is there anything else I can help with?"
-                            self._add_to_history("assistant", success_msg)
-                            self._speak(success_msg)
-                        else:
-                            # Cancellation failed
-                            error_msg = "Sorry, there was an error processing your cancellation. Please try again or contact support."
-                            self._add_to_history("assistant", error_msg)
-                            self._speak(error_msg)
+            if not selected_shift:
+                # Couldn't find shift - ask LLM to clarify
+                error_msg = "Sorry, I couldn't identify that shift. Could you tell me which one again?"
+                self._add_to_history("assistant", error_msg)
+                self._speak(error_msg)
+                return
 
-                        # Reset and go back to beginning
-                        self._reset_conversation()
-                        return
+            self.context['selected_shift'] = selected_shift
 
-                    else:
-                        self._log(f"Invalid shift index: {shift_index}")
+            # Submit the cancellation
+            success = self._submit_cancellation(selected_shift, reason)
 
-                except ValueError:
-                    self._log(f"Could not parse shift number from: {parts[0]}")
+            if success:
+                # Tell LLM cancellation was successful
+                system_msg = f"SYSTEM: Cancellation successful. Shift at {selected_shift.get('client_name')} on {selected_shift.get('date')} has been cancelled. Tell the user and ask if there's anything else."
+                self._add_to_history("system", system_msg)
 
-            # If we got here, parsing failed - ask LLM to try again
-            error_msg = "Sorry, I got confused. Could you confirm which shift and your reason again?"
-            self._add_to_history("assistant", error_msg)
-            self._speak(error_msg)
+                success_response = self._ask_llm(system_msg)
+                parsed_success = self._parse_llm_response(success_response)
 
-        else:
-            # No <DONE> tag - LLM is still confirming details
-            # Speak the response and stay in current state
-            self._add_to_history("assistant", response)
-            self._speak(response)
+                if parsed_success['text']:
+                    self._add_to_history("assistant", parsed_success['text'])
+                    self._speak(parsed_success['text'])
 
-    def _submit_cancellation(self) -> bool:
+                # Handle DONE command if LLM outputs it
+                if parsed_success['command'] == 'DONE':
+                    self._reset_conversation()
+
+            else:
+                error_msg = "Sorry, there was an error cancelling your shift. Please try again or contact support."
+                self._add_to_history("assistant", error_msg)
+                self._speak(error_msg)
+                self._reset_conversation()
+
+    def _submit_cancellation(self, shift: Dict[str, Any], reason: str) -> bool:
         """
         Submit the cancellation request (sends notification email).
         Returns True if successful, False otherwise.
         """
         try:
-            shift = self.context.get('selected_shift')
-            reason = self.context.get('reason')
             staff_info = self.context.get('staff_info', {})
 
             if not shift or not reason:
@@ -431,7 +429,114 @@ class CallAssistantV5:
             return False
 
     # =========================================================================
-    # HELPER FUNCTIONS
+    # LLM HELPER FUNCTIONS
+    # =========================================================================
+
+    def _build_system_prompt(self) -> str:
+        """Build the system prompt based on current state and context."""
+        # Format chat history
+        chat_history = "\n".join([
+            f"{msg['role'].upper()}: {msg['content']}"
+            for msg in self.chat_history[-10:]  # Last 10 messages for context
+        ]) or "No conversation yet."
+
+        # Get state-specific instructions
+        if self.state == State.GATHERING_INFO:
+            state_instructions = GATHERING_INFO_INSTRUCTIONS
+            context_info = ""
+        else:  # CONFIRMING_DETAILS
+            # Format shifts for the LLM
+            shifts_formatted = self._format_shifts_for_llm()
+            state_instructions = CONFIRMING_DETAILS_INSTRUCTIONS.format(
+                shifts_formatted=shifts_formatted
+            )
+            context_info = ""
+
+        # Build complete prompt
+        return SYSTEM_PROMPT.format(
+            state=self.state.name,
+            state_instructions=state_instructions,
+            chat_history=chat_history,
+            context_info=context_info
+        )
+
+    def _format_shifts_for_llm(self) -> str:
+        """Format shifts list for the LLM to understand."""
+        shifts = self.context.get('shifts', [])
+        if not shifts:
+            return "No shifts available."
+
+        formatted = []
+        for i, shift in enumerate(shifts, 1):
+            formatted.append(
+                f"{i}. shift_id={shift.get('shift_id')} - "
+                f"{shift.get('client_name')} on {shift.get('date')} at {shift.get('time')}"
+            )
+        return "\n".join(formatted)
+
+    def _ask_llm(self, user_phrase: str) -> str:
+        """
+        Ask the LLM and get response.
+        Sets the system prompt based on current state before asking.
+        """
+        system_prompt = self._build_system_prompt()
+        self.llm_client.set_system_prompt(system_prompt)
+        response = self.llm_client.ask_llm(user_phrase)
+        return response.strip()
+
+    def _parse_llm_response(self, llm_response: str) -> Dict[str, Any]:
+        """
+        Parse LLM response for special commands and text to speak.
+
+        Returns dict with:
+        - 'command': The command tag found (FETCH, SUBMIT, DONE, END, or None)
+        - 'data': Associated data with the command
+        - 'text': Text to speak (with commands removed)
+        """
+        import re
+
+        result = {
+            'command': None,
+            'data': None,
+            'text': llm_response
+        }
+
+        # Check for <END>
+        if '<END>' in llm_response:
+            result['command'] = 'END'
+            result['text'] = llm_response.replace('<END>', '').strip()
+            return result
+
+        # Check for <DONE>
+        if '<DONE>' in llm_response:
+            result['command'] = 'DONE'
+            result['text'] = llm_response.replace('<DONE>', '').strip()
+            return result
+
+        # Check for <FETCH>query
+        fetch_match = re.search(r'<FETCH>(.+?)(?:<|$)', llm_response)
+        if fetch_match:
+            result['command'] = 'FETCH'
+            result['data'] = fetch_match.group(1).strip()
+            result['text'] = re.sub(r'<FETCH>.+?(?:<|$)', '', llm_response).strip()
+            return result
+
+        # Check for <SUBMIT>shift_id|reason
+        submit_match = re.search(r'<SUBMIT>(.+?)\|(.+?)(?:<|$)', llm_response)
+        if submit_match:
+            result['command'] = 'SUBMIT'
+            result['data'] = {
+                'shift_id': submit_match.group(1).strip(),
+                'reason': submit_match.group(2).strip()
+            }
+            result['text'] = re.sub(r'<SUBMIT>.+?(?:<|$)', '', llm_response).strip()
+            return result
+
+        # No command found - just regular text
+        return result
+
+    # =========================================================================
+    # UTILITY FUNCTIONS
     # =========================================================================
 
     def _add_to_history(self, role: str, content: str) -> None:
@@ -443,10 +548,8 @@ class CallAssistantV5:
         self.state = State.GATHERING_INFO
         self.chat_history = []
         self.context = {
-            'date_query': None,
             'shifts': [],
             'selected_shift': None,
-            'reason': None,
             'staff_info': {},
         }
 
@@ -455,50 +558,6 @@ class CallAssistantV5:
         self._log(f"TRANSITION: {self.state.name} -> {new_state.name}")
         self.state = new_state
 
-    def _format_chat_history(self) -> str:
-        """Format chat history as a readable string for the LLM prompt."""
-        if not self.chat_history:
-            return "(No previous messages)"
-
-        formatted = []
-        for msg in self.chat_history:
-            role = "User" if msg["role"] == "user" else "Assistant"
-            formatted.append(f"{role}: {msg['content']}")
-        return "\n".join(formatted)
-
-    def _parse_tag(self, text: str, tag_name: str) -> Optional[str]:
-        """
-        Extract content from a tag like <TAG>content</TAG>.
-        Returns None if tag not found.
-        """
-        pattern = f"<{tag_name}>(.*?)</{tag_name}>"
-        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        return None
-
-    def _remove_tags(self, text: str) -> str:
-        """Remove all XML-style tags from text, keeping only the spoken content."""
-        # Remove <TAG>...</TAG> patterns
-        cleaned = re.sub(r'<[^>]+>.*?</[^>]+>', '', text, flags=re.DOTALL)
-        # Remove any standalone tags like <TAG> without closing
-        cleaned = re.sub(r'<[^>]+>', '', cleaned)
-        # Clean up extra whitespace
-        cleaned = ' '.join(cleaned.split())
-        return cleaned.strip()
-
-    def _format_shifts_for_prompt(self) -> str:
-        """Format shifts list for the LLM prompt."""
-        shifts = self.context.get('shifts', [])
-        if not shifts:
-            return "No shifts found."
-
-        formatted = []
-        for i, shift in enumerate(shifts, 1):
-            formatted.append(
-                f"{i}. {shift.get('client_name', 'Unknown')} on {shift.get('date', 'Unknown')} at {shift.get('time', 'Unknown')}"
-            )
-        return "\n".join(formatted)
 
     def _fetch_shifts(self, date_query: str) -> bool:
         """
@@ -568,8 +627,9 @@ class CallAssistantV5:
 
         try:
             # Initial greeting
-            self._speak("Hello, thank you for Help at hands support. How can I help you today?")
-            self._add_to_history("assistant", "Hello, thank you for calling. How can I help you today?")
+            greeting = "Hello, thank you for calling. How can I help you today?"
+            self._speak(greeting)
+            self._add_to_history("assistant", greeting)
 
             self.whisper_client.start()
 
@@ -595,8 +655,9 @@ class CallAssistantV5:
             )
 
             # Initial greeting
-            self._speak("Hello, thank you for calling. How can I help you today?")
-            self._add_to_history("assistant", "Hello, thank you for calling. How can I help you today?")
+            greeting = "Hello, thank you for calling. How can I help you today?"
+            self._speak(greeting)
+            self._add_to_history("assistant", greeting)
 
             self.whisper_client.start()
 

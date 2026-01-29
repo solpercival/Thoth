@@ -82,12 +82,23 @@ PROCESSING_PROMPT = "I'll look into that. Please wait."
 
 LLM_MODEL = os.getenv("LLM_MODEL")
 
-LOG_PREFIX = "CALL_ASSISTANT.PY:"
+LOG_PREFIX = "[CALL_ASSISTANT_V3.PY]"
+
+# Test mode configuration
+TEST_MODE = True
+TEST_NUMBER = "0411 305 401"  # Replace with your test number
+
 
 
 class CallAssistantV3:
     def __init__(self, caller_phone: Optional[str] = None, extension: Optional[str] = None):
-        self.caller_phone = caller_phone
+        
+        if TEST_MODE:
+            self.caller_phone = TEST_NUMBER
+        else:
+            self.caller_phone = caller_phone
+
+
         self.extension = extension
         self.llm_client = OllamaClient(model=LLM_MODEL, system_prompt=SYSTEM_PROMPT)
         self.whisper_client: SystemAudioWhisperClient = None
@@ -301,7 +312,7 @@ class CallAssistantV3:
                 f"SYSTEM: Cancellation successful. "
                 f"Shift at {shift['client_name']} on {shift['date']} at {shift['time']} "
                 f"has been cancelled. Reason: {reason}. "
-                f"Thank the user and ask if there's anything else."
+                f"Tell the user that the rostering team has been notified. Thank the user and ask if there's anything else."
             )
             llm_response = self.llm_client.ask_llm(system_message)
 

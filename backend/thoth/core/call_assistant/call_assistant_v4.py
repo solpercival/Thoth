@@ -178,10 +178,19 @@ Examples:
 
 
 # =============================================================================
-# MAIN CLASS
+# CONFIGURATION
 # =============================================================================
 
 LOG_PREFIX = "[CALL_ASSISTANT_V4]"
+
+# Test mode configuration
+TEST_MODE = True
+TEST_NUMBER = "0434966494"  # Replace with your test number
+
+
+# =============================================================================
+# MAIN CLASS
+# =============================================================================
 
 
 class CallAssistantV4:
@@ -632,7 +641,13 @@ Response (just the text, nothing else):"""
 
     def _fetch_and_present_shifts(self, query: str) -> None:
         """Fetch shifts from backend and present them to the user."""
-        if not self.caller_phone:
+        # Use test number if test mode is enabled
+        phone_number = TEST_NUMBER if TEST_MODE else self.caller_phone
+
+        if TEST_MODE:
+            self._log(f"TEST MODE: Using phone {TEST_NUMBER}")
+
+        if not phone_number:
             self._speak("I don't have your phone number on file. Please contact support.")
             self._reset_and_listen()
             return
@@ -640,7 +655,7 @@ Response (just the text, nothing else):"""
         self._transition_to(State.FETCHING_SHIFTS)
 
         try:
-            result = asyncio.run(test_integrated_workflow(self.caller_phone, query))
+            result = asyncio.run(test_integrated_workflow(phone_number, query))
 
             if not result:
                 self._speak("Sorry, I couldn't retrieve your shifts. Please try again later.")
