@@ -62,11 +62,16 @@ class SystemAudioWhisperClient:
     client.stop() - stop transcribing
     """
     def __init__(self, model="base", non_english=False, energy_threshold=1000,
-                 record_timeout=0.1, phrase_timeout=3, on_phrase_complete=None,
-                 silence_threshold=0.01, max_phrase_duration=15):
+                 record_timeout=0.1, phrase_timeout=2, on_phrase_complete=None,
+                 silence_threshold=0.01, max_phrase_duration=15,
+                 # Whisper accuracy parameters
+                 language="en", temperature=0.0, initial_prompt=None,
+                 condition_on_previous_text=True, no_speech_threshold=0.6,
+                 logprob_threshold=-1.0, compression_ratio_threshold=2.4,
+                 min_audio_length=0.3):
         """
         Initialize the transcription service.
-        
+
         Args:
             model: Whisper model to use (tiny, base, small, medium, large)
             non_english: Whether to use non-English model
@@ -76,6 +81,16 @@ class SystemAudioWhisperClient:
             on_phrase_complete: Callback function(text) called when a phrase is complete
             silence_threshold: Audio level below this is considered silence (0-1 range), increase if ends to early, vice versa
             max_phrase_duration: Maximum duration in seconds before forcing phrase completion (default: 30)
+
+            # Whisper Accuracy Parameters (improve transcription quality):
+            language: Language code (e.g., "en", "es", "fr"). Explicitly setting improves accuracy 10-20%
+            temperature: Sampling temperature (0.0 = greedy/deterministic, higher = more random). Use 0.0 for consistency
+            initial_prompt: Optional text to provide context/vocabulary to the model (e.g., "Technical discussion about AI")
+            condition_on_previous_text: Use context from previous segments for better continuity (default: True)
+            no_speech_threshold: Threshold to filter out non-speech/hallucinations (0.0-1.0, default: 0.6)
+            logprob_threshold: Filter segments with low average log probability (default: -1.0)
+            compression_ratio_threshold: Detect repetitive/bad transcriptions (default: 2.4)
+            min_audio_length: Minimum audio length in seconds before transcribing (default: 1.0, was 0.5)
         """
         self.model_name = model
         self.non_english = non_english
@@ -85,6 +100,16 @@ class SystemAudioWhisperClient:
         self.max_phrase_duration = max_phrase_duration
         self.on_phrase_complete = on_phrase_complete
         self.silence_threshold = silence_threshold
+
+        # Whisper accuracy parameters
+        self.language = language if not non_english else None
+        self.temperature = temperature
+        self.initial_prompt = initial_prompt
+        self.condition_on_previous_text = condition_on_previous_text
+        self.no_speech_threshold = no_speech_threshold
+        self.logprob_threshold = logprob_threshold
+        self.compression_ratio_threshold = compression_ratio_threshold
+        self.min_audio_length = min_audio_length
         
         # State variables
         self.last_speech_time = None
@@ -419,11 +444,22 @@ class SystemAudioWhisperClient:
                     # Convert to numpy array
                     if self.phrase_bytes:
                         audio_np = np.frombuffer(self.phrase_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-                        
-                        # Only transcribe if we have enough audio (at least 0.5 seconds)
-                        if len(audio_np) > 8000:  # 0.5 seconds at 16kHz
-                            # Transcribe
-                            result = self.audio_model.transcribe(audio_np, fp16=torch.cuda.is_available())
+
+                        # Only transcribe if we have enough audio (configurable, default 1.0 seconds)
+                        min_samples = int(self.min_audio_length * 16000)  # min_audio_length seconds at 16kHz
+                        if len(audio_np) > min_samples:
+                            # Transcribe with accuracy-optimized parameters
+                            result = self.audio_model.transcribe(
+                                audio_np,
+                                fp16=torch.cuda.is_available(),
+                                language=self.language,
+                                temperature=self.temperature,
+                                initial_prompt=self.initial_prompt,
+                                condition_on_previous_text=self.condition_on_previous_text,
+                                no_speech_threshold=self.no_speech_threshold,
+                                logprob_threshold=self.logprob_threshold,
+                                compression_ratio_threshold=self.compression_ratio_threshold
+                            )
                             text = result['text'].strip()
                             
                             # Only update display if text actually changed

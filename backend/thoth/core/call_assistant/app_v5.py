@@ -110,7 +110,7 @@ def call_started():
         'thread': thread,
         'stop_event': stop_event,
         'started_at': time.time(),
-        'version': 'v4',
+        'version': 'v5',
         'caller_phone': caller_phone
     }
 
@@ -169,7 +169,7 @@ if __name__ == '__main__':
     # Add shutdown handler
     try:
         print("=" * 60)
-        print("Starting Flask app with CallAssistantV4")
+        print("Starting Flask app with CallAssistantV5")
         print("=" * 60)
         print("\nEndpoints:")
         print("  GET/POST /webhook/call-started - Start a call session")

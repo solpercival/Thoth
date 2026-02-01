@@ -4,9 +4,10 @@ import ollama
 # Input a prompt into the llm, default model is the lightest one. Returns the llm response
 class OllamaClient:
 
-    def __init__(self, model: str = 'gemma3:1b', system_prompt: str = None):
+    def __init__(self, model: str = 'qwen3:8b', system_prompt: str = None, enable_thinking: bool = True):
         self.model_name = model
         self.messages = []
+        self.enable_thinking = enable_thinking
 
         # System prompt (rules to be applied to every output)
         if system_prompt:
@@ -58,8 +59,12 @@ class OllamaClient:
             'content': prompt
         })
 
-        # Ask LLM
-        response = ollama.chat(model=self.model_name, messages=self.messages)
+        # Ask LLM (disable thinking for supported models unless explicitly enabled)
+        response = ollama.chat(
+            model=self.model_name,
+            messages=self.messages,
+            think=self.enable_thinking
+        )
         response_content = response['message']['content']
 
         # Add LLM repsonse to conversation history

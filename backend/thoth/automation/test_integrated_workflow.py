@@ -174,7 +174,7 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             
             # STEP 4: Date Reasoning (LLM - no page needed)
             print("\n[STEP 4] Reasoning dates from transcript...")
-            reasoner = ShiftDateReasoner(model="qwen3:8b")
+            reasoner = ShiftDateReasoner(model=os.getenv("LLM_MODEL", "qwen3:8b"))
             print(f"[*] Asking LLM: \"{transcript}\"")
             
             date_info = reasoner.reason_dates(transcript)
@@ -265,9 +265,9 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             print(f"[OK] Total Shifts: {len(all_shifts)}")
             print(f"[OK] Shifts in Date Range: {len(filtered_shifts)}")
             print("="*70)
-            print("\n[*] Browser will stay open for 10 seconds for inspection...")
+            print("\n[*] Browser will stay open for 5 seconds for inspection...")
             print("[*] Check the browser window to see if login and TOTP were successful")
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
             print("[*] Closing browser...\n")
             
             return {

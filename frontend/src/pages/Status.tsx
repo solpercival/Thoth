@@ -27,13 +27,13 @@ export function StatusPage() {
   };
 
   // Local app controls
-  const [callV3Running, setCallV3Running] = useState(false);
+  const [callV5Running, setCallV3Running] = useState(false);
   const [odinRunning, setOdinRunning] = useState(false);
 
   // Sync local running flags with backend-reported status
   React.useEffect(() => {
     if (status?.apps) {
-      setCallV3Running(!!status.apps['call_assistant_v3']);
+      setCallV3Running(!!status.apps['call_assistant_v5']);
       setOdinRunning(!!status.apps['odin']);
     }
   }, [status]);
@@ -46,11 +46,11 @@ export function StatusPage() {
 
     if (running) {
       await window.electron.stopApp(name);
-      if (name === 'call_assistant_v3') setCallV3Running(false);
+      if (name === 'call_assistant_v5') setCallV3Running(false);
       if (name === 'odin') setOdinRunning(false);
     } else {
       await window.electron.startApp(name);
-      if (name === 'call_assistant_v3') setCallV3Running(true);
+      if (name === 'call_assistant_v5') setCallV3Running(true);
       if (name === 'odin') setOdinRunning(true);
     }
   };
@@ -106,12 +106,12 @@ export function StatusPage() {
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ flex: 1 }}>
-            <strong>Call Assistant V3</strong>
-            <div style={{ fontSize: 12, color: '#666' }}>Starts backend/thoth/core/call_assistant/app_v3.py</div>
+            <strong>Call Assistant V5</strong>
+            <div style={{ fontSize: 12, color: '#666' }}>Starts backend/thoth/core/call_assistant/app_v5.py</div>
           </div>
           <ToggleButton
-            isActive={callV3Running}
-            onToggle={() => toggleApp('call_assistant_v3', callV3Running)}
+            isActive={callV5Running}
+            onToggle={() => toggleApp('call_assistant_v5', callV5Running)}
             activeLabel="Stop"
             inactiveLabel="Start"
             disabled={isLoading}
