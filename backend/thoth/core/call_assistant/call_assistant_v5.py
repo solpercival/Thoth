@@ -128,6 +128,14 @@ Your response:"""
 
 
 # =============================================================================
+# TEST MODE CONFIGURATION
+# =============================================================================
+
+TEST_MODE = True  # Set to True to use test phone number instead of real caller
+TEST_NUMBER = "0433622442"  # Phone number to use when TEST_MODE is True
+
+
+# =============================================================================
 # MAIN CLASS
 # =============================================================================
 
@@ -146,7 +154,12 @@ class CallAssistantV5:
     """
 
     def __init__(self, caller_phone: Optional[str] = None, extension: Optional[str] = None):
-        self.caller_phone = caller_phone
+        # Use test number if TEST_MODE is enabled
+        if TEST_MODE:
+            self.caller_phone = TEST_NUMBER
+            self._log(f"TEST MODE: Using preset number {TEST_NUMBER}")
+        else:
+            self.caller_phone = caller_phone
         self.extension = extension
 
         # LLM client
@@ -165,6 +178,7 @@ class CallAssistantV5:
         # Context - stores extracted data
         self.context: Dict[str, Any] = {
             'date_query': None,       # Date/time the user mentioned
+            'original_query': None,   # Full user query for date reasoning
             'shifts': [],             # Shifts retrieved from backend
             'selected_shift': None,   # The shift user confirmed
             'reason': None,           # Cancellation reason
@@ -230,6 +244,11 @@ class CallAssistantV5:
         # Add user message to chat history
         self._add_to_history("user", phrase)
 
+        # Store the original query if this is the first meaningful message
+        # This helps us build full context for the date reasoner later
+        if not self.context.get('original_query'):
+            self.context['original_query'] = phrase
+
         # Build the prompt with chat history
         prompt = PROMPT_GATHERING_INFO.format(
             chat_history=self._format_chat_history(),
@@ -255,8 +274,20 @@ class CallAssistantV5:
                 self._add_to_history("assistant", spoken_response)
                 self._speak(spoken_response)
 
-            # Fetch shifts from backend
-            success = self._fetch_shifts(date_query)
+            # Build full context query for the date reasoner
+            # If the current phrase has the date info, use it directly
+            # Otherwise combine the original query with the date
+            if date_query.lower() in phrase.lower():
+                # Current phrase contains the date - likely a complete sentence
+                full_query = phrase
+            else:
+                # Date was provided separately - combine with original intent
+                full_query = f"{self.context.get('original_query', '')} {phrase}".strip()
+
+            self._log(f"FULL QUERY FOR DATE REASONER: {full_query}")
+
+            # Fetch shifts from backend with full context
+            success = self._fetch_shifts(full_query)
 
             if success and self.context['shifts']:
                 # Transition to confirming details
@@ -444,6 +475,7 @@ class CallAssistantV5:
         self.chat_history = []
         self.context = {
             'date_query': None,
+            'original_query': None,
             'shifts': [],
             'selected_shift': None,
             'reason': None,

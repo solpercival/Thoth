@@ -174,7 +174,7 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             
             # STEP 4: Date Reasoning (LLM - no page needed)
             print("\n[STEP 4] Reasoning dates from transcript...")
-            reasoner = ShiftDateReasoner(model="qwen2.5:7b")
+            reasoner = ShiftDateReasoner(model="qwen3:8b")
             print(f"[*] Asking LLM: \"{transcript}\"")
             
             date_info = reasoner.reason_dates(transcript)
