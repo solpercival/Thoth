@@ -41,22 +41,22 @@ class ScreeningAgent:
 
     # Class constants
     INTRO = """
-Hello. We are going to ask you a few questions. Please only speak once the question has been fully read to you.
-"""
+            Hello. We are going to ask you a few questions. Please only speak once the question has been fully read to you.
+            """
 
     OUTRO = """
-That concludes all the question we wanted to ask you.
-Thank you for answering our questions. You're answers have been recorded and is awaiting review.
-Good day.
-"""
+            That concludes all the question we wanted to ask you.
+            Thank you for answering our questions. You're answers have been recorded and is awaiting review.
+            Good day.
+            """
 
     ANS_RECORDED = """
-Your answer has been recorded.
-"""
+                   Your answer has been recorded.
+                   """
 
     NEXT_QUESTION = """
- Next question.
-"""
+                    Next question.
+                    """
 
 
     def __init__(self, caller_id:str, caller_number:str):
@@ -128,6 +128,9 @@ Your answer has been recorded.
             # Check again if stop was requested during waiting
             if self._stop_requested.is_set():
                 break
+            
+
+
 
             # 4. Notify answer recorded
             self.whisper_client.pause()

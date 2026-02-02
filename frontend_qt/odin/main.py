@@ -5,8 +5,9 @@ Simplest PyQt App - Text and a Button
 import sys
 import subprocess
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QTimeEdit
-from PyQt6.QtCore import Qt, QTimer, QTime, pyqtSignal
+from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, \
+    QPushButton, QLabel, QFrame, QLineEdit, QTimeEdit, QListWidget, QListWidgetItem
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QFont
 
 import requests
@@ -14,104 +15,116 @@ import time
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import utils
 
-AUTO_START_CHECK_FREQ = 20000  #ms
 
-################################################################################
-# SUB WIDGETS
-################################################################################
-class AfterHourTimeSelect(QWidget):
+class PhoneList(QWidget):
     def __init__(self):
         super().__init__()
-
-        # Get values from setting
-        def_start_time: list = utils.time_string_to_int(utils.load_from_config("DEFAULT_AUTO_START_TIME"))
-        def_stop_time: list = utils.time_string_to_int(utils.load_from_config("DEFAULT_AUTO_STOP_TIME"))
-        if def_start_time == []:
-            print("WARNING: Default start time cannot be read from settings. Fallback value used: 17:30.")
-            def_start_time = [17, 30]
-        if def_stop_time == []:
-            print("WARNING: Default stop time cannot be read from settings. Fallback value used: 8:30.")
-            def_start_time = [8, 30]
-
-        # UI
-        layout = QVBoxLayout()
-
-        # disappearing when the button is clicked
-        start_time_layout = QHBoxLayout()
-        stop_time_layout = QHBoxLayout()
-
-        # Start time
-        start_label = QLabel("Start:")
-        self.start_time = QTimeEdit()
-        self.start_time.setTime(QTime(def_start_time[0], def_start_time[1]))  # 5:30 PM default
-        self.start_time.setDisplayFormat("HH:mm")  # 24-hour format
-
-        start_time_layout.addWidget(start_label)
-        start_time_layout.addWidget(self.start_time)
-
-        # Stop time
-        stop_label = QLabel("Stop:")
-        self.stop_time = QTimeEdit()
-        self.stop_time.setTime(QTime(def_stop_time[0], def_stop_time[1]))  # 8:30 AM default
-        self.stop_time.setDisplayFormat("HH:mm")
-
-        stop_time_layout.addWidget(stop_label)
-        stop_time_layout.addWidget(self.stop_time)
-
-        # Add to main layout
-        layout.addLayout(start_time_layout)
-        layout.addLayout(stop_time_layout)
-        self.setLayout(layout)
-
-    # Getter for start time
-    # Returns start time [hour, minute]
-    def get_start_time(self) -> list[int]:
-        return[self.start_time.time().hour(), self.start_time.time().minute()]
-
-    # Getter for stop time
-    # Returns stop time [hour, minute]
-    def get_stop_time(self) -> list[int]:
-        return[self.stop_time.time().hour(), self.stop_time.time().minute()]
-
+        layout = QVBoxLayout(self)
+        line_edit_layout = QHBoxLayout()
+        edit_buttons_layout = QHBoxLayout()
         
-class AutoStartWidget(QWidget):
-    # Signals must be class attributes (not in __init__)
-    auto_start_enabled = pyqtSignal(list, list)  # (start_time, stop_time)
-    auto_start_disabled = pyqtSignal()
+        # The list
+        self.list_widget = QListWidget()
+        list_title = QLabel("Call Queue")
 
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
+        # Line edit
+        self.line_edit = QLineEdit()
+        self.line_edit.setPlaceholderText("Enter number and press Enter")
+        self.line_edit.returnPressed.connect(self.add_item)
 
-        # UI
-        self.autostart_checkbox = QCheckBox("Auto-start at after hours")
-        self.autostart_checkbox.stateChanged.connect(self.on_autostart_changed)
+        add_button = QPushButton("Add")
+        add_button.pressed.connect(self.add_item)
+        line_edit_layout.addWidget(self.line_edit)
+        line_edit_layout.addWidget(add_button)
 
-        # Time select
-        self.time_select = AfterHourTimeSelect()
-        self.time_select.setVisible(False)
+        # Edit buttons
+        move_up_button = QPushButton("↑")
+        move_up_button.setStyleSheet("background-color: #e8e9e8; color: black;")
+        move_up_button.pressed.connect(self._move_entry_up)
+        edit_buttons_layout.addWidget(move_up_button)
 
-        # Add to layout
-        layout.addWidget(self.autostart_checkbox)
-        layout.addWidget(self.time_select)
-        self.setLayout(layout)
+        move_down_button = QPushButton("↓")
+        move_down_button.setStyleSheet("background-color: #e8e9e8; color: black;")
+        move_down_button.pressed.connect(self._move_entry_down)
+        edit_buttons_layout.addWidget(move_down_button)
+
+        delete_button = QPushButton("Delete")
+        delete_button.setStyleSheet("background-color: #ff2400;")
+        delete_button.pressed.connect(self._delete_selected)
+        edit_buttons_layout.addWidget(delete_button)
 
 
-    # Logic
-    def on_autostart_changed(self, state):
-        # Get curent time
-        start_time: list = self.time_select.get_start_time()
-        stop_time: list = self.time_select.get_stop_time()
+        # Assemble the final widget
+        layout.addWidget(list_title)
+        layout.addWidget(self.list_widget)
+        layout.addLayout(line_edit_layout)
+        layout.addLayout(edit_buttons_layout)
+
+        # Load list
+        self._load_list()
+    
+    def add_item(self):
+        text = self.line_edit.text().strip()
+        if text:
+            self.list_widget.addItem(text)
+            self.line_edit.clear()
 
 
-        # 2 is enabled, 0 disabled
-        if state == 2:
-            self.time_select.show()
-            self.auto_start_enabled.emit(start_time, stop_time)
+    def take_top_number(self) -> str:
+        first_item = self.list_widget.takeItem(0)  # Returns a QListWidgetItem (use .text() to retrieve content)
 
-        else:
-            self.time_select.hide()
-            self.auto_start_disabled.emit()
+        # If exist return, else return None
+        if first_item:
+            return first_item
+        return None
+    
+    
+    def _load_list(self) -> None:
+        try:
+            with open("phone_numbers_in_queue.txt", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:  # Skip empty lines
+                        self.list_widget.addItem(line)
+        except FileNotFoundError:
+            pass  # File doesn't exist yet, that's fine
+
+    def save_list(self) -> None:
+        with open("phone_numbers_in_queue.txt", "w") as f:
+            for i in range(self.list_widget.count()):
+                f.write(self.list_widget.item(i).text() + "\n")
+
+
+    ####################
+    # SIGNAL CALL BACKS
+    #####################
+    def _delete_selected(self) -> None:
+        current_item = self.list_widget.currentItem()
+        if current_item:
+            self.list_widget.takeItem(self.list_widget.row(current_item))
+
+    def _move_entry_up(self) -> None:
+        current_row = self.list_widget.currentRow()
+        if current_row > 0:  # Can't move up if already at top
+            item = self.list_widget.takeItem(current_row)
+            self.list_widget.insertItem(current_row - 1, item)
+            self.list_widget.setCurrentRow(current_row - 1)  # Keep it selected
+    
+    def _move_entry_down(self) -> None:
+        current_row = self.list_widget.currentRow()
+        if current_row < self.list_widget.count() - 1:  # Can't move down if at bottom
+            item = self.list_widget.takeItem(current_row)
+            self.list_widget.insertItem(current_row + 1, item)
+            self.list_widget.setCurrentRow(current_row + 1)
+
+    
+
+
+
+
+    
+
+
 
 ################################################################################
 # MAIN WINDOW
@@ -160,19 +173,17 @@ class MainWindow(QWidget):
         self.button.setObjectName("startButton")
 
         self.status = QLabel("Status: Stopped")
-        #self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # The phone list widget
+        self.phone_list = PhoneList()
 
         # Add widgets to layout
         layout.addWidget(title)
         layout.addWidget(app_banner)
         layout.addSpacing(40)
         layout.addWidget(self.button)
-
-        self.autostart_widget = AutoStartWidget()
-        layout.addWidget(self.autostart_widget)
-        self.autostart_widget.auto_start_enabled.connect(self._on_auto_start_enabled)
-        self.autostart_widget.auto_start_disabled.connect(self._on_auto_start_disabled)
-
+        layout.addSpacing(40)
+        layout.addWidget(self.phone_list)
         layout.addStretch()  # Flexible space instead of fixed, do this to prevent elements not being squished
         layout.addWidget(self.status)
         self.setLayout(layout)
@@ -197,9 +208,6 @@ class MainWindow(QWidget):
         ###############################################################################
         # BACKGROUND JOBS
         ###############################################################################
-        self.autostart_timer = QTimer()
-        self.autostart_timer.timeout.connect(self._check_autostart_time)
-
 
 
     ###############################################################################
@@ -229,51 +237,6 @@ class MainWindow(QWidget):
             self._stop_backend()
             self.is_backend_on = False
         
-
-
-    def _on_auto_start_enabled(self, start_time:list, stop_time:list) -> None:
-        """
-        When the auto start check box is enabled
-        """
-        print(f"Auto-start enabled. Start: {start_time}. Stop: {stop_time}")
-        self.autostart_timer.start(AUTO_START_CHECK_FREQ)
-        pass
-
-
-    def _on_auto_start_disabled(self) -> None:
-        """
-        When the auto start check box is disabled
-        """
-        print("Auto-start disabled")
-        self.autostart_timer.stop()
-        pass
-        
-
-    def _check_autostart_time(self) -> None:
-        """
-        Called everytime auto_start_timer has timed out. This is the loop that checks the auto start
-        It imitates a user pressing the start button.
-        """
-        # [Hour, Minute] in 24h format
-        current_time: list = [QTime.currentTime().hour(), QTime.currentTime().minute()]
-        time_select_menu: AfterHourTimeSelect = self.autostart_widget.time_select
-        start_time: list = time_select_menu.get_start_time()
-        stop_time: list = time_select_menu.get_stop_time()
-
-        print(f"Checking for auto times. Current time: {current_time}. Start time: {start_time}. Stop time: {stop_time}.")
-
-        # Check START
-        start_time: list = time_select_menu.get_start_time()
-        stop_time: list = time_select_menu.get_stop_time()
-        if start_time[0] == current_time[0] and start_time[1] == current_time[1]:
-            if not self.is_backend_on:
-                self.on_button_click()
-
-        # Check STOP
-        elif stop_time[0] == current_time[0] and stop_time[1] == current_time[1]:
-            if self.is_backend_on:
-                self.on_button_click()
-
 
 
     ###############################################################################
@@ -366,7 +329,9 @@ class MainWindow(QWidget):
         self.button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
         self.button.setEnabled(True)
 
-
+    def closeEvent(self, event):
+        self.phone_list.save_list()
+        event.accept()
 
 
 
