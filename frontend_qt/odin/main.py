@@ -6,7 +6,7 @@ import sys
 import subprocess
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, \
-    QPushButton, QLabel, QFrame, QLineEdit, QTimeEdit, QListWidget, QListWidgetItem
+    QPushButton, QLabel, QFrame, QLineEdit, QTimeEdit, QListWidget, QListWidgetItem, QDoubleSpinBox
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QFont
 
@@ -14,6 +14,40 @@ import requests
 import time
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import utils
+
+
+class AutoDialControl(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        self.start_stop_button_layout = QHBoxLayout()
+
+        # Auto-Dial and status label
+        title_label = QLabel("Auto-Dial")
+        title_label.setFont(QFont("Arial", 16, 700))
+        self.status_label = QLabel("Status: Stopped")
+
+        # AD Start button
+        start_button = QPushButton("Start")
+        self.start_stop_button_layout.addWidget(start_button)
+
+
+        # Delay VBoxlayout
+        delay_layout = QVBoxLayout()
+        delay_label = QLabel("Delay (s)")
+        self.delay_spin_box = QDoubleSpinBox()
+        delay_layout.addWidget(delay_label)
+        delay_layout.addWidget(self.delay_spin_box)
+        self.start_stop_button_layout.addLayout(delay_layout)
+
+        # Assemble everything
+        layout.addWidget(title_label)
+        layout.addWidget(self.status_label)
+        layout.addLayout(self.start_stop_button_layout)
+        
+
+
+
 
 
 class PhoneList(QWidget):
@@ -26,6 +60,7 @@ class PhoneList(QWidget):
         # The list
         self.list_widget = QListWidget()
         list_title = QLabel("Call Queue")
+        list_title.setFont(QFont("Arial", 16, 700))
 
         # Line edit
         self.line_edit = QLineEdit()
@@ -177,6 +212,9 @@ class MainWindow(QWidget):
         # The phone list widget
         self.phone_list = PhoneList()
 
+        # The auto dial widget
+        self.auto_dial = AutoDialControl()
+
         # Add widgets to layout
         layout.addWidget(title)
         layout.addWidget(app_banner)
@@ -184,6 +222,10 @@ class MainWindow(QWidget):
         layout.addWidget(self.button)
         layout.addSpacing(40)
         layout.addWidget(self.phone_list)
+        layout.addSpacing(10)
+        layout.addWidget(self.auto_dial)
+        layout.addSpacing(40)
+
         layout.addStretch()  # Flexible space instead of fixed, do this to prevent elements not being squished
         layout.addWidget(self.status)
         self.setLayout(layout)
