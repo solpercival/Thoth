@@ -1,7 +1,7 @@
 @echo off
 REM Launcher for HAHS AI Call Assistant Qt Frontend
 cd /d "%~dp0"
-cd ..
+cd ..\..
 call .venv\Scripts\activate.bat
-python frontend_qt\main.py
+python frontend_qt\odin\main.py
 pause

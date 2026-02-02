@@ -11,6 +11,7 @@ from PyQt6.QtGui import QPixmap, QFont
 
 import requests
 import time
+sys.path.insert(0, str(Path(__file__).parent.parent))
 import utils
 
 AUTO_START_CHECK_FREQ = 20000  #ms
@@ -133,7 +134,7 @@ class MainWindow(QWidget):
         # UI SETUP
         ###############################################################################
         # Window settings
-        self.setWindowTitle("HAHS AI Call Assistant v0.5")
+        self.setWindowTitle("HAHS Thoth AI Call Assistant v0.5")
         self.setMinimumSize(400, 400)
 
         # Create layout (vertical stack)
@@ -141,12 +142,12 @@ class MainWindow(QWidget):
 
         # Create widgets
         # Title
-        title = QLabel("HAHS AI POWERED CALL ASSISTANT")
+        title = QLabel("HAHS AI POWERED ROSTERING CALL ASSISTANT")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont("Arial", 512, 700))
 
         # HAHS Banner
-        script_dir = Path(__file__).parent
+        script_dir = Path(__file__).parent.parent  # frontend_qt folder
         image_path = script_dir / "hahs_logo.png"
         pixmap = QPixmap(str(image_path)).scaled(300, 75)
         app_banner = QLabel()
@@ -279,7 +280,7 @@ class MainWindow(QWidget):
     ###############################################################################
     def _start_backend(self):
         # Get the path to app_v3.py
-        project_root = Path(__file__).parent.parent  # frontend_qt -> Thoth
+        project_root = Path(__file__).parent.parent.parent  # thoth -> frontend_qt -> Thoth
         script_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "app_v5.py"
 
         # Get python from venv

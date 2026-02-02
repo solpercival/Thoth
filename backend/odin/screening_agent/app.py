@@ -38,89 +38,8 @@ def home():
 Odin Screening Agent is running!
 
 Endpoints:
-/webhook/call-started - to start a call. Args: 'call_id', 'from'
-/webhook/call-ended - to end a call. Args: 'from'
 /status - get active sessions
 """
-
-
-@app.route('/webhook/call-started', methods=['GET', 'POST'])
-def call_started():
-    """Webhook endpoint triggered when a call starts via Custom URL"""
-
-    # Get parameters from Custom URL
-    caller_phone = request.args.get('from')
-
-    # Use test number if in test mode
-    if TEST_MODE:
-        caller_phone = TEST_NUMBER
-        print(f"APP.PY: TEST MODE - Using preset number: {caller_phone}")
-
-    # Create UNIQUE call_id to prevent blocking repeat calls
-    call_id = f"{caller_phone}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-
-    # Check if call already in progress
-    if call_id in active_sessions:
-        return "<script>window.close();</script>", 200
-
-    # Create and start screening agent
-    print(f"APP.PY: Creating screening agent for {caller_phone}")
-    screening_agent = ScreeningAgent(call_id, caller_phone)
-
-    def run_agent():
-        try:
-            screening_agent.start()
-            # Wait for the agent thread to complete
-            if screening_agent._agent_thread:
-                screening_agent._agent_thread.join()
-        except Exception as e:
-            print(f"[ERROR] {e}")
-        finally:
-            if call_id in active_sessions:
-                del active_sessions[call_id]
-
-    print("APP.PY: Starting screening agent thread.")
-    thread = Thread(target=run_agent, daemon=True)
-    thread.start()
-
-    # Store session
-    active_sessions[call_id] = {
-        'agent': screening_agent,
-        'thread': thread,
-        'started_at': time.time(),
-        'caller_phone': caller_phone
-    }
-
-    # Return simple HTML that closes immediately
-    return "<script>setTimeout(function(){window.close();}, 1000);</script>", 200
-
-
-@app.route('/webhook/call-ended', methods=['GET', 'POST'])
-def call_ended():
-    """Webhook endpoint triggered when a call ends"""
-    caller_phone = request.args.get('from')
-
-    # Find session by caller phone
-    session_to_end = None
-    call_id_to_end = None
-
-    for cid, session in active_sessions.items():
-        if session.get('caller_phone') == caller_phone:
-            session_to_end = session
-            call_id_to_end = cid
-            break
-
-    if not session_to_end:
-        print(f"APP.PY: No active session found for caller {caller_phone}")
-        return "<script>window.close();</script>", 404
-
-    # Stop the screening agent
-    agent = session_to_end['agent']
-    agent.stop()
-
-    print(f"APP.PY: Stop call requested for caller: {caller_phone}, call id: {call_id_to_end}")
-
-    return "<script>window.close();</script>", 200
 
 
 @app.route('/status', methods=['GET'])
@@ -147,8 +66,6 @@ if __name__ == "__main__":
         print("Starting Odin Screening Agent Flask app")
         print("=" * 60)
         print("\nEndpoints:")
-        print("  GET/POST /webhook/call-started - Start a screening session")
-        print("  GET/POST /webhook/call-ended - End a screening session")
         print("  GET /status - Get active sessions")
         print("  GET /health - Health check")
         print("\nServer running on http://localhost:5000\n")
