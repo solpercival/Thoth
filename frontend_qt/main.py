@@ -6,11 +6,13 @@ import sys
 import subprocess
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QTimeEdit
-from PyQt6.QtCore import Qt, QTimer, QTime
+from PyQt6.QtCore import Qt, QTimer, QTime, pyqtSignal
 from PyQt6.QtGui import QPixmap, QFont
 
 import requests
 import time
+
+AUTO_START_CHECK_FREQ = 20000  #ms
 
 ################################################################################
 # SUB WIDGETS
@@ -21,6 +23,10 @@ class AfterHourTimeSelect(QWidget):
 
         # UI
         layout = QVBoxLayout()
+        # Put these next two lines in because for whatever reason they keep
+        # disappearing when the button is clicked
+        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
+        layout.setSpacing(5)  # Tighter spacing
         start_time_layout = QHBoxLayout()
         stop_time_layout = QHBoxLayout()
 
@@ -46,6 +52,7 @@ class AfterHourTimeSelect(QWidget):
         layout.addLayout(start_time_layout)
         layout.addLayout(stop_time_layout)
         self.setLayout(layout)
+        self.setMinimumHeight(80)  # Ensure enough space for both rows
 
     # Getter for start time
     # Returns start time [hour, minute]
@@ -54,19 +61,21 @@ class AfterHourTimeSelect(QWidget):
 
     # Getter for stop time
     # Returns stop time [hour, minute]
-    def get_start_time(self) -> list[int]:
+    def get_stop_time(self) -> list[int]:
         return[self.stop_time.time().hour(), self.stop_time.time().minute()]
 
         
-
-
-
-
-
 class AutoStartWidget(QWidget):
+    # Signals must be class attributes (not in __init__)
+    auto_start_enabled = pyqtSignal(list, list)  # (start_time, stop_time)
+    auto_start_disabled = pyqtSignal()
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
+        # These next two lines are for so that the time select remains visible
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
 
         # UI
         self.autostart_checkbox = QCheckBox("Auto-start at after hours")
@@ -84,18 +93,19 @@ class AutoStartWidget(QWidget):
 
     # Logic
     def on_autostart_changed(self, state):
+        # Get curent time
+        start_time: list = self.time_select.get_start_time()
+        stop_time: list = self.time_select.get_stop_time()
+
+
         # 2 is enabled, 0 disabled
         if state == 2:
-            print("Auto-start enabled")
-            # TODO: Add logic to enable auto-start
-            self.time_select.setVisible(True)
-            self.adjustSize()  # Force layout update
+            self.time_select.show()
+            self.auto_start_enabled.emit(start_time, stop_time)
 
         else:
-            print("Auto-start disabled")
-            # TODO: Add logic to disable auto-start
-            self.time_select.setVisible(False)
-            self.adjustSize()  # Force layout update
+            self.time_select.hide()
+            self.auto_start_disabled.emit()
 
 ################################################################################
 # MAIN WINDOW
@@ -119,7 +129,7 @@ class MainWindow(QWidget):
         ###############################################################################
         # Window settings
         self.setWindowTitle("HAHS AI Call Assistant v0.5")
-        self.setMinimumSize(400, 300)
+        self.setMinimumSize(400, 400)
 
         # Create layout (vertical stack)
         layout = QVBoxLayout()
@@ -151,8 +161,13 @@ class MainWindow(QWidget):
         layout.addWidget(app_banner)
         layout.addSpacing(40)
         layout.addWidget(self.button)
-        layout.addWidget(AutoStartWidget())
-        layout.addSpacing(80)
+
+        self.autostart_widget = AutoStartWidget()
+        layout.addWidget(self.autostart_widget)
+        self.autostart_widget.auto_start_enabled.connect(self._on_auto_start_enabled)
+        self.autostart_widget.auto_start_disabled.connect(self._on_auto_start_disabled)
+
+        layout.addStretch()  # Flexible space instead of fixed
         layout.addWidget(self.status)
         self.setLayout(layout)
 
@@ -172,11 +187,22 @@ class MainWindow(QWidget):
             }
         """)
 
+        ###############################################################################
+        # BACKGROUND JOBS
+        ###############################################################################
+        self.autostart_timer = QTimer()
+        self.autostart_timer.timeout.connect(self._check_autostart_time)
+        # Don't start timer here - it starts when checkbox is enabled via signal
+
+
 
     ###############################################################################
     # SIGNAL CALL BACKS
     ###############################################################################
-    def on_button_click(self):
+    def on_button_click(self) -> None:
+        """
+        Called when main start button clicked
+        """
         print("Button clicked!")
 
         if not self.is_backend_on:
@@ -196,6 +222,53 @@ class MainWindow(QWidget):
             # Logic
             self._stop_backend()
             self.is_backend_on = False
+        
+
+
+    def _on_auto_start_enabled(self, start_time:list, stop_time:list) -> None:
+        """
+        When the auto start check box is enabled
+        """
+        print(f"Auto-start enabled. Start: {start_time}. Stop: {stop_time}")
+        self.autostart_timer.start(AUTO_START_CHECK_FREQ)
+        pass
+
+
+    def _on_auto_start_disabled(self) -> None:
+        """
+        When the auto start check box is disabled
+        """
+        print("Auto-start disabled")
+        self.autostart_timer.stop()
+        pass
+        
+
+    def _check_autostart_time(self) -> None:
+        """
+        Called everytime auto_start_timer has timed out. This is the loop that checks the auto start
+        It imitates a user pressing the start button.
+        """
+        # [Hour, Minute] in 24h format
+        current_time: list = [QTime.currentTime().hour(), QTime.currentTime().minute()]
+        time_select_menu: AfterHourTimeSelect = self.autostart_widget.time_select
+        start_time: list = time_select_menu.get_start_time()
+        stop_time: list = time_select_menu.get_stop_time()
+
+        print(f"Checking for auto times. Current time: {current_time}. Start time: {start_time}. Stop time: {stop_time}.")
+
+        # Check START
+        start_time: list = time_select_menu.get_start_time()
+        stop_time: list = time_select_menu.get_stop_time()
+        if start_time[0] == current_time[0] and start_time[1] == current_time[1]:
+            if not self.is_backend_on:
+                self.on_button_click()
+
+        # Check STOP
+        elif stop_time[0] == current_time[0] and stop_time[1] == current_time[1]:
+            if self.is_backend_on:
+                self.on_button_click()
+
+
 
     ###############################################################################
     # ACTION FUNCTIONS
