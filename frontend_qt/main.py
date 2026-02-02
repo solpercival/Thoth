@@ -11,6 +11,7 @@ from PyQt6.QtGui import QPixmap, QFont
 
 import requests
 import time
+import utils
 
 AUTO_START_CHECK_FREQ = 20000  #ms
 
@@ -21,19 +22,27 @@ class AfterHourTimeSelect(QWidget):
     def __init__(self):
         super().__init__()
 
+        # Get values from setting
+        def_start_time: list = utils.time_string_to_int(utils.load_from_config("DEFAULT_AUTO_START_TIME"))
+        def_stop_time: list = utils.time_string_to_int(utils.load_from_config("DEFAULT_AUTO_STOP_TIME"))
+        if def_start_time == []:
+            print("WARNING: Default start time cannot be read from settings. Fallback value used: 17:30.")
+            def_start_time = [17, 30]
+        if def_stop_time == []:
+            print("WARNING: Default stop time cannot be read from settings. Fallback value used: 8:30.")
+            def_start_time = [8, 30]
+
         # UI
         layout = QVBoxLayout()
-        # Put these next two lines in because for whatever reason they keep
+
         # disappearing when the button is clicked
-        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
-        layout.setSpacing(5)  # Tighter spacing
         start_time_layout = QHBoxLayout()
         stop_time_layout = QHBoxLayout()
 
         # Start time
         start_label = QLabel("Start:")
         self.start_time = QTimeEdit()
-        self.start_time.setTime(QTime(17, 30))  # 5:00 PM default
+        self.start_time.setTime(QTime(def_start_time[0], def_start_time[1]))  # 5:30 PM default
         self.start_time.setDisplayFormat("HH:mm")  # 24-hour format
 
         start_time_layout.addWidget(start_label)
@@ -42,7 +51,7 @@ class AfterHourTimeSelect(QWidget):
         # Stop time
         stop_label = QLabel("Stop:")
         self.stop_time = QTimeEdit()
-        self.stop_time.setTime(QTime(8, 30))  # 9:00 AM default
+        self.stop_time.setTime(QTime(def_stop_time[0], def_stop_time[1]))  # 8:30 AM default
         self.stop_time.setDisplayFormat("HH:mm")
 
         stop_time_layout.addWidget(stop_label)
@@ -52,7 +61,6 @@ class AfterHourTimeSelect(QWidget):
         layout.addLayout(start_time_layout)
         layout.addLayout(stop_time_layout)
         self.setLayout(layout)
-        self.setMinimumHeight(80)  # Ensure enough space for both rows
 
     # Getter for start time
     # Returns start time [hour, minute]
@@ -73,9 +81,6 @@ class AutoStartWidget(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
-        # These next two lines are for so that the time select remains visible
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
 
         # UI
         self.autostart_checkbox = QCheckBox("Auto-start at after hours")
@@ -167,7 +172,7 @@ class MainWindow(QWidget):
         self.autostart_widget.auto_start_enabled.connect(self._on_auto_start_enabled)
         self.autostart_widget.auto_start_disabled.connect(self._on_auto_start_disabled)
 
-        layout.addStretch()  # Flexible space instead of fixed
+        layout.addStretch()  # Flexible space instead of fixed, do this to prevent elements not being squished
         layout.addWidget(self.status)
         self.setLayout(layout)
 
@@ -192,7 +197,6 @@ class MainWindow(QWidget):
         ###############################################################################
         self.autostart_timer = QTimer()
         self.autostart_timer.timeout.connect(self._check_autostart_time)
-        # Don't start timer here - it starts when checkbox is enabled via signal
 
 
 
