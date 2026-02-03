@@ -12,3 +12,8 @@ dist/
 build/
 *.log
 .DS_Store
+
+# Ignore log files in screening_agent logs folder, but keep the folder
+backend/odin/screening_agent/logs/*
+!backend/odin/screening_agent/logs/.gitkeep
+

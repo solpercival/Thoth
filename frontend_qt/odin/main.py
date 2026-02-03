@@ -6,7 +6,7 @@ import sys
 import subprocess
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, \
-    QPushButton, QLabel, QFrame, QLineEdit, QTimeEdit, QListWidget, QListWidgetItem, QDoubleSpinBox
+    QPushButton, QLabel, QFrame, QLineEdit, QTimeEdit, QListWidget, QListWidgetItem, QDoubleSpinBox, QSizePolicy
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QFont
 
@@ -17,8 +17,19 @@ import utils
 
 
 class AutoDialControl(QWidget):
-    def __init__(self):
+    def __init__(self, phone_list: 'PhoneList' = None):
         super().__init__()
+        # State variables
+        self.is_auto_dialing: bool = False
+
+        # References
+        self.phone_list = phone_list
+
+        # Timer for auto-dial loop
+        self.dial_timer = QTimer()
+        self.dial_timer.timeout.connect(self._dial_next_number)
+
+
         layout = QVBoxLayout(self)
         self.start_stop_button_layout = QHBoxLayout()
 
@@ -28,8 +39,10 @@ class AutoDialControl(QWidget):
         self.status_label = QLabel("Status: Stopped")
 
         # AD Start button
-        start_button = QPushButton("Start")
-        self.start_stop_button_layout.addWidget(start_button)
+        self.start_button = QPushButton("Start")
+        self.start_button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.start_stop_button_layout.addWidget(self.start_button)
+        self.start_button.pressed.connect(self._on_auto_dial_start_button_pressed)
 
 
         # Delay VBoxlayout
@@ -44,7 +57,54 @@ class AutoDialControl(QWidget):
         layout.addWidget(title_label)
         layout.addWidget(self.status_label)
         layout.addLayout(self.start_stop_button_layout)
-        
+
+    
+    def _on_auto_dial_start_button_pressed(self) -> None:
+        self.is_auto_dialing = not self.is_auto_dialing
+
+        if self.is_auto_dialing:
+            print("[FRONTEND] Auto Dial started")
+
+            # Start the dial timer using delay from spin box (convert seconds to ms)
+            delay_ms = int(self.delay_spin_box.value() * 1000)
+            if delay_ms < 100:
+                delay_ms = 1000  # Default to 1 second if delay is too small
+            self.dial_timer.start(delay_ms)
+
+            # UI Changes
+            self.start_button.setText("Stop")
+            self.start_button.setStyleSheet("background-color: #dc3545; padding: 10px; border-radius: 5px;")
+            self.status_label.setText("Status: Auto-dialing...")
+        else:
+            print("[FRONTEND] Auto Dial stopped")
+
+            # Stop the timer
+            self.dial_timer.stop()
+
+            # UI Changes
+            self.start_button.setText("Start")
+            self.start_button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
+            self.status_label.setText("Status: Stopped")
+
+    def _dial_next_number(self) -> None:
+        """Called by timer to dial the next number in the queue"""
+        if not self.phone_list:
+            print("[FRONTEND] No phone list connected!")
+            return
+
+        next_item = self.phone_list.take_top_number()
+        if next_item:
+            phone_number = next_item.text()
+            print(f"[FRONTEND] Dialing: {phone_number}")
+            self.status_label.setText(f"Status: Dialing {phone_number}")
+        else:
+            # Queue is empty, stop auto-dialing
+            print("[FRONTEND] Queue empty, stopping auto-dial")
+            self.dial_timer.stop()
+
+            # Simulate a person clicking the button
+            if self.is_auto_dialing:
+                self._on_auto_dial_start_button_pressed()
 
 
 
@@ -212,8 +272,8 @@ class MainWindow(QWidget):
         # The phone list widget
         self.phone_list = PhoneList()
 
-        # The auto dial widget
-        self.auto_dial = AutoDialControl()
+        # The auto dial widget (pass phone_list reference for queue access)
+        self.auto_dial = AutoDialControl(phone_list=self.phone_list)
 
         # Add widgets to layout
         layout.addWidget(title)
