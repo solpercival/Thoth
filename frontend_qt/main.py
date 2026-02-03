@@ -27,7 +27,7 @@ class AfterHourTimeSelect(QWidget):
         # Start time
         start_label = QLabel("Start:")
         self.start_time = QTimeEdit()
-        self.start_time.setTime(QTime(17, 30))  # 5:00 PM default
+        self.start_time.setTime(QTime(17, 30))  # 5:30 PM default
         self.start_time.setDisplayFormat("HH:mm")  # 24-hour format
 
         start_time_layout.addWidget(start_label)
