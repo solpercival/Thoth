@@ -207,7 +207,7 @@ class MainWindow(QWidget):
         self.button.clicked.connect(self.on_button_click)  # Connect click to function
         self.button.setObjectName("startButton")
 
-        self.status = QLabel("Status: Stopped")
+        self.status = QLabel("Status: App stopped")
 
         # The phone list widget
         self.phone_list = PhoneList()
