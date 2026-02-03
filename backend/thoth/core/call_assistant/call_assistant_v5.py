@@ -148,6 +148,14 @@ TEST_NUMBER = "0411 305 401"  # Replace with your test number
 
 
 # =============================================================================
+# TEST MODE CONFIGURATION
+# =============================================================================
+
+TEST_MODE = True  # Set to True to use test phone number instead of real caller
+TEST_NUMBER = "0433622442"  # Phone number to use when TEST_MODE is True
+
+
+# =============================================================================
 # MAIN CLASS
 # =============================================================================
 
@@ -275,8 +283,20 @@ class CallAssistantV5:
             date_query = parsed['data']
             self._log(f"Fetching shifts for: {date_query}")
 
-            # Fetch shifts from backend
-            success = self._fetch_shifts(date_query)
+            # Build full context query for the date reasoner
+            # If the current phrase has the date info, use it directly
+            # Otherwise combine the original query with the date
+            if date_query.lower() in phrase.lower():
+                # Current phrase contains the date - likely a complete sentence
+                full_query = phrase
+            else:
+                # Date was provided separately - combine with original intent
+                full_query = f"{self.context.get('original_query', '')} {phrase}".strip()
+
+            self._log(f"FULL QUERY FOR DATE REASONER: {full_query}")
+
+            # Fetch shifts from backend with full context
+            success = self._fetch_shifts(full_query)
 
             if success and self.context['shifts']:
                 # Transition to confirming details

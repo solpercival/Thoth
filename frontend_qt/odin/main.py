@@ -5,97 +5,161 @@ Simplest PyQt App - Text and a Button
 import sys
 import subprocess
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QTimeEdit
-from PyQt6.QtCore import Qt, QTimer, QTime
+from PyQt6.QtWidgets import QApplication, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, \
+    QPushButton, QLabel, QFrame, QLineEdit, QTimeEdit, QListWidget, QListWidgetItem, QDoubleSpinBox
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QFont
 
 import requests
 import time
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import utils
 
-################################################################################
-# SUB WIDGETS
-################################################################################
-class AfterHourTimeSelect(QWidget):
+
+class AutoDialControl(QWidget):
     def __init__(self):
         super().__init__()
+        layout = QVBoxLayout(self)
+        self.start_stop_button_layout = QHBoxLayout()
 
-        # UI
-        layout = QVBoxLayout()
-        start_time_layout = QHBoxLayout()
-        stop_time_layout = QHBoxLayout()
+        # Auto-Dial and status label
+        title_label = QLabel("Auto-Dial")
+        title_label.setFont(QFont("Arial", 16, 700))
+        self.status_label = QLabel("Status: Stopped")
 
-        # Start time
-        start_label = QLabel("Start:")
-        self.start_time = QTimeEdit()
-        self.start_time.setTime(QTime(17, 30))  # 5:30 PM default
-        self.start_time.setDisplayFormat("HH:mm")  # 24-hour format
+        # AD Start button
+        start_button = QPushButton("Start")
+        self.start_stop_button_layout.addWidget(start_button)
 
-        start_time_layout.addWidget(start_label)
-        start_time_layout.addWidget(self.start_time)
 
-        # Stop time
-        stop_label = QLabel("Stop:")
-        self.stop_time = QTimeEdit()
-        self.stop_time.setTime(QTime(8, 30))  # 9:00 AM default
-        self.stop_time.setDisplayFormat("HH:mm")
+        # Delay VBoxlayout
+        delay_layout = QVBoxLayout()
+        delay_label = QLabel("Delay (s)")
+        self.delay_spin_box = QDoubleSpinBox()
+        delay_layout.addWidget(delay_label)
+        delay_layout.addWidget(self.delay_spin_box)
+        self.start_stop_button_layout.addLayout(delay_layout)
 
-        stop_time_layout.addWidget(stop_label)
-        stop_time_layout.addWidget(self.stop_time)
-
-        # Add to main layout
-        layout.addLayout(start_time_layout)
-        layout.addLayout(stop_time_layout)
-        self.setLayout(layout)
-
-    # Getter for start time
-    # Returns start time [hour, minute]
-    def get_start_time(self) -> list[int]:
-        return[self.start_time.time().hour(), self.start_time.time().minute()]
-
-    # Getter for stop time
-    # Returns stop time [hour, minute]
-    def get_start_time(self) -> list[int]:
-        return[self.stop_time.time().hour(), self.stop_time.time().minute()]
-
+        # Assemble everything
+        layout.addWidget(title_label)
+        layout.addWidget(self.status_label)
+        layout.addLayout(self.start_stop_button_layout)
         
 
 
 
 
 
-class AutoStartWidget(QWidget):
+class PhoneList(QWidget):
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
+        line_edit_layout = QHBoxLayout()
+        edit_buttons_layout = QHBoxLayout()
+        
+        # The list
+        self.list_widget = QListWidget()
+        list_title = QLabel("Call Queue")
+        list_title.setFont(QFont("Arial", 16, 700))
 
-        # UI
-        self.autostart_checkbox = QCheckBox("Auto-start at after hours")
-        self.autostart_checkbox.stateChanged.connect(self.on_autostart_changed)
+        # Line edit
+        self.line_edit = QLineEdit()
+        self.line_edit.setPlaceholderText("Enter number and press Enter")
+        self.line_edit.returnPressed.connect(self.add_item)
 
-        # Time select
-        self.time_select = AfterHourTimeSelect()
-        self.time_select.setVisible(False)
+        add_button = QPushButton("Add")
+        add_button.pressed.connect(self.add_item)
+        line_edit_layout.addWidget(self.line_edit)
+        line_edit_layout.addWidget(add_button)
 
-        # Add to layout
-        layout.addWidget(self.autostart_checkbox)
-        layout.addWidget(self.time_select)
-        self.setLayout(layout)
+        # Edit buttons
+        move_up_button = QPushButton("↑")
+        move_up_button.setStyleSheet("background-color: #e8e9e8; color: black;")
+        move_up_button.pressed.connect(self._move_entry_up)
+        edit_buttons_layout.addWidget(move_up_button)
+
+        move_down_button = QPushButton("↓")
+        move_down_button.setStyleSheet("background-color: #e8e9e8; color: black;")
+        move_down_button.pressed.connect(self._move_entry_down)
+        edit_buttons_layout.addWidget(move_down_button)
+
+        delete_button = QPushButton("Delete")
+        delete_button.setStyleSheet("background-color: #ff2400;")
+        delete_button.pressed.connect(self._delete_selected)
+        edit_buttons_layout.addWidget(delete_button)
 
 
-    # Logic
-    def on_autostart_changed(self, state):
-        # 2 is enabled, 0 disabled
-        if state == 2:
-            print("Auto-start enabled")
-            # TODO: Add logic to enable auto-start
-            self.time_select.setVisible(True)
-            self.adjustSize()  # Force layout update
+        # Assemble the final widget
+        layout.addWidget(list_title)
+        layout.addWidget(self.list_widget)
+        layout.addLayout(line_edit_layout)
+        layout.addLayout(edit_buttons_layout)
 
-        else:
-            print("Auto-start disabled")
-            # TODO: Add logic to disable auto-start
-            self.time_select.setVisible(False)
-            self.adjustSize()  # Force layout update
+        # Load list
+        self._load_list()
+    
+    def add_item(self):
+        text = self.line_edit.text().strip()
+        if text:
+            self.list_widget.addItem(text)
+            self.line_edit.clear()
+
+
+    def take_top_number(self) -> str:
+        first_item = self.list_widget.takeItem(0)  # Returns a QListWidgetItem (use .text() to retrieve content)
+
+        # If exist return, else return None
+        if first_item:
+            return first_item
+        return None
+    
+    
+    def _load_list(self) -> None:
+        try:
+            with open("phone_numbers_in_queue.txt", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:  # Skip empty lines
+                        self.list_widget.addItem(line)
+        except FileNotFoundError:
+            pass  # File doesn't exist yet, that's fine
+
+    def save_list(self) -> None:
+        with open("phone_numbers_in_queue.txt", "w") as f:
+            for i in range(self.list_widget.count()):
+                f.write(self.list_widget.item(i).text() + "\n")
+
+
+    ####################
+    # SIGNAL CALL BACKS
+    #####################
+    def _delete_selected(self) -> None:
+        current_item = self.list_widget.currentItem()
+        if current_item:
+            self.list_widget.takeItem(self.list_widget.row(current_item))
+
+    def _move_entry_up(self) -> None:
+        current_row = self.list_widget.currentRow()
+        if current_row > 0:  # Can't move up if already at top
+            item = self.list_widget.takeItem(current_row)
+            self.list_widget.insertItem(current_row - 1, item)
+            self.list_widget.setCurrentRow(current_row - 1)  # Keep it selected
+    
+    def _move_entry_down(self) -> None:
+        current_row = self.list_widget.currentRow()
+        if current_row < self.list_widget.count() - 1:  # Can't move down if at bottom
+            item = self.list_widget.takeItem(current_row)
+            self.list_widget.insertItem(current_row + 1, item)
+            self.list_widget.setCurrentRow(current_row + 1)
+
+    
+
+
+
+
+    
+
+
 
 ################################################################################
 # MAIN WINDOW
@@ -118,20 +182,20 @@ class MainWindow(QWidget):
         # UI SETUP
         ###############################################################################
         # Window settings
-        self.setWindowTitle("HAHS AI Call Assistant v0.5")
-        self.setMinimumSize(400, 300)
+        self.setWindowTitle("HAHS AI Odin Screening Assistant v0.5")
+        self.setMinimumSize(400, 400)
 
         # Create layout (vertical stack)
         layout = QVBoxLayout()
 
         # Create widgets
         # Title
-        title = QLabel("HAHS AI POWERED CALL ASSISTANT")
+        title = QLabel("HAHS AI POWERED SCREENING ASSISTANT")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont("Arial", 512, 700))
 
         # HAHS Banner
-        script_dir = Path(__file__).parent
+        script_dir = Path(__file__).parent.parent  # frontend_qt folder
         image_path = script_dir / "hahs_logo.png"
         pixmap = QPixmap(str(image_path)).scaled(300, 75)
         app_banner = QLabel()
@@ -144,24 +208,35 @@ class MainWindow(QWidget):
         self.button.setObjectName("startButton")
 
         self.status = QLabel("Status: Stopped")
-        #self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # The phone list widget
+        self.phone_list = PhoneList()
+
+        # The auto dial widget
+        self.auto_dial = AutoDialControl()
 
         # Add widgets to layout
         layout.addWidget(title)
         layout.addWidget(app_banner)
         layout.addSpacing(40)
         layout.addWidget(self.button)
-        layout.addWidget(AutoStartWidget())
-        layout.addSpacing(80)
+        layout.addSpacing(40)
+        layout.addWidget(self.phone_list)
+        layout.addSpacing(10)
+        layout.addWidget(self.auto_dial)
+        layout.addSpacing(40)
+
+        layout.addStretch()  # Flexible space instead of fixed, do this to prevent elements not being squished
         layout.addWidget(self.status)
         self.setLayout(layout)
 
         # Basic dark styling
-        ##ffffff;
-        ##282c34
+        ##ffffff; Black
+        ##282c34; Greyish black
+        ##2c041c; Wine purple
         self.setStyleSheet("""
             QWidget {
-                background-color: #282c34; 
+                background-color: #2c041c; 
                 color: white;
                 font-size: 16px;
             }
@@ -172,11 +247,18 @@ class MainWindow(QWidget):
             }
         """)
 
+        ###############################################################################
+        # BACKGROUND JOBS
+        ###############################################################################
+
 
     ###############################################################################
     # SIGNAL CALL BACKS
     ###############################################################################
-    def on_button_click(self):
+    def on_button_click(self) -> None:
+        """
+        Called when main start button clicked
+        """
         print("Button clicked!")
 
         if not self.is_backend_on:
@@ -196,14 +278,16 @@ class MainWindow(QWidget):
             # Logic
             self._stop_backend()
             self.is_backend_on = False
+        
+
 
     ###############################################################################
     # ACTION FUNCTIONS
     ###############################################################################
     def _start_backend(self):
-        # Get the path to app_v3.py
-        project_root = Path(__file__).parent.parent  # frontend_qt -> Thoth
-        script_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "app_v5.py"
+        # Get the path to odin app.py
+        project_root = Path(__file__).parent.parent.parent  # odin -> frontend_qt -> Thoth
+        script_path = project_root / "backend" / "odin" / "screening_agent" / "app.py"
 
         # Get python from venv
         if sys.platform == "win32":
@@ -287,7 +371,9 @@ class MainWindow(QWidget):
         self.button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
         self.button.setEnabled(True)
 
-
+    def closeEvent(self, event):
+        self.phone_list.save_list()
+        event.accept()
 
 
 
