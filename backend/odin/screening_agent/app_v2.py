@@ -13,8 +13,10 @@ from flask import Flask, request, jsonify
 from threading import Thread, Event
 import time
 import uuid
+import os
 
 from odin.screening_agent.screening_agent_v2 import ScreeningAgentV2
+from odin.screening_agent.call_3cx_client import make_call
 
 # For testing
 TEST_MODE = True  # Set to true to use test phone number (as the caller number)
@@ -70,13 +72,27 @@ def start_screening():
                 'session_id': sid
             }), 409
 
+
+    # Actually call the phone number
+    extension = os.getenv('EXTENSION', '0147')  # Your extension
+    call_result = make_call(extension, caller_phone)
+    
+    if not call_result:
+        return jsonify({
+            'error': 'Failed to initiate call',
+            'caller_phone': caller_phone
+        }), 500
+    
+    print(f"[APP_V2] Call initiated: {call_result}")
+
+
     # Create the screening agent
-    print(f"[APP_V2] Creating ScreeningAgentV2 for {caller_phone}")
+    """print(f"[APP_V2] Creating ScreeningAgentV2 for {caller_phone}")
     agent = ScreeningAgentV2(caller_id=caller_id, caller_number=caller_phone)
     stop_event = Event()
 
     def run_agent():
-        """Run the agent in a thread"""
+        Run the agent in a thread
         try:
             agent.start()
 
@@ -108,7 +124,7 @@ def start_screening():
         'started_at': time.time(),
         'caller_phone': caller_phone,
         'caller_id': caller_id
-    }
+    }"""
 
     return jsonify({
         'status': 'started',
@@ -207,6 +223,18 @@ def get_session(session_id):
         'started_at': time.ctime(session['started_at'])
     }), 200
 
+@app.route('/debug', methods=['POST'])
+def debug():
+    """Debug endpoint - prints posted data to terminal"""
+    data = request.get_json() or {}
+    print(f"\n{'='*40}")
+    print("[DEBUG ENDPOINT] Received POST data:")
+    for key, value in data.items():
+        print(f"  {key}: {value}")
+    print(f"{'='*40}\n")
+    return jsonify({'status': 'received', 'data': data}), 200
+
+
 
 if __name__ == "__main__":
     try:
@@ -220,10 +248,10 @@ if __name__ == "__main__":
         print("  GET  /session/<id> - Get specific session details")
         print("  GET  /health  - Health check")
         print(f"\nTEST_MODE: {TEST_MODE}")
-        print("\nServer running on http://localhost:5001\n")
+        print("\nServer running on http://localhost:5000\n")
         print("=" * 60 + "\n")
 
-        app.run(debug=True, port=5001, use_reloader=False)
+        app.run(debug=True, port=5000, use_reloader=False)
     except KeyboardInterrupt:
         print("\nShutting down gracefully...")
         # Stop all active sessions

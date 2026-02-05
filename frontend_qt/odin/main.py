@@ -21,7 +21,7 @@ class AutoDialControl(QWidget):
         super().__init__()
         # State variables
         self.is_auto_dialing: bool = False
-
+        
         # References
         self.phone_list = phone_list
 
@@ -116,6 +116,10 @@ class PhoneList(QWidget):
         layout = QVBoxLayout(self)
         line_edit_layout = QHBoxLayout()
         edit_buttons_layout = QHBoxLayout()
+
+        # State variables and others
+        self.is_in_call: bool = False
+        self.current_session_id: str = None
         
         # The list
         self.list_widget = QListWidget()
@@ -148,12 +152,16 @@ class PhoneList(QWidget):
         delete_button.pressed.connect(self._delete_selected)
         edit_buttons_layout.addWidget(delete_button)
 
+        self.call_button = QPushButton("Call")
+        self.call_button.setStyleSheet("background-color: #0018f9;")
+        self.call_button.pressed.connect(self._on_call_button_pressed)
 
         # Assemble the final widget
         layout.addWidget(list_title)
         layout.addWidget(self.list_widget)
         layout.addLayout(line_edit_layout)
         layout.addLayout(edit_buttons_layout)
+        layout.addWidget(self.call_button)
 
         # Load list
         self._load_list()
@@ -163,6 +171,12 @@ class PhoneList(QWidget):
         if text:
             self.list_widget.addItem(text)
             self.line_edit.clear()
+
+
+    def reset_button(self) -> None:
+        self.call_button.setText("Call")
+        self.call_button.setStyleSheet("background-color: #0018f9;")
+        self.is_in_call = False
 
 
     def take_top_number(self) -> str:
@@ -211,6 +225,74 @@ class PhoneList(QWidget):
             item = self.list_widget.takeItem(current_row)
             self.list_widget.insertItem(current_row + 1, item)
             self.list_widget.setCurrentRow(current_row + 1)
+
+    def _on_call_button_pressed(self) -> None:
+        if not self.is_in_call:
+            # Extract the selected phone number
+            current_item = self.list_widget.currentItem()
+            if not current_item:
+                # Check the top of the list if there are none selected
+                current_item = self.take_top_number()
+                if not current_item:
+                    print("[FRONTEND] No phone number selected")
+                    self.reset_button()
+                    return
+            phone_number = current_item.text()
+            # Finally, call the backend
+            try:
+                # UI change telling that were processing the call function
+                # TODO: Make these two lines work!
+                # self.call_button.setText("Calling...")
+                # self.call_button.setStyleSheet("background-color: #6c757d;")
+
+                response = requests.post(
+                    "http://localhost:5000/start",
+                    json={"caller_phone": phone_number}
+                )
+
+                # Success
+                if response.status_code == 200:
+                    data = response.json()
+                    print(f"[FRONTEND] Call started: {data}")
+                    self.current_session_id = data.get('session_id')
+
+                    # Change the UI
+                    self.is_in_call = True
+                    self.call_button.setText("End Call")
+                    self.call_button.setStyleSheet("background-color: #dc3545;")
+
+                
+                # Sadness
+                else:
+                    print(f"[FRONTEND] Failed to start call: {response.text}")
+
+                    # Change the UI
+                    self.reset_button()
+
+            except requests.ConnectionError:
+                print("[FRONTEND] Backend not running!")
+                self.reset_button()
+
+        # Call is already on going so drop it
+        else:
+            try:
+                response = requests.post(
+                    "http://localhost:5000/stop",
+                    json={"session_id": self.current_session_id}
+                )
+                if response.status_code == 200:
+                    print(f"[FRONTEND] Call ended: {response.json()}")
+                else:
+                    print(f"[FRONTEND] Failed to end call: {response.text}")
+            except requests.ConnectionError:
+                print("[FRONTEND] Backend not running!")
+            finally:
+                self.current_session_id = None
+                self.reset_button()
+
+
+
+            
 
     
 
@@ -347,7 +429,7 @@ class MainWindow(QWidget):
     def _start_backend(self):
         # Get the path to odin app.py
         project_root = Path(__file__).parent.parent.parent  # odin -> frontend_qt -> Thoth
-        script_path = project_root / "backend" / "odin" / "screening_agent" / "app.py"
+        script_path = project_root / "backend" / "odin" / "screening_agent" / "app_v2.py"
 
         # Get python from venv
         if sys.platform == "win32":

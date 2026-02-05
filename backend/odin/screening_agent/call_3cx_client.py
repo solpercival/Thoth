@@ -1,6 +1,7 @@
 import requests
 import urllib3
 import os
+from urllib.parse import quote
 from dotenv import load_dotenv
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -91,36 +92,71 @@ def close_all_calls_for_extension(extension):
 def make_call(extension: str, destination: str, timeout: int = 30):
     """
     Initiate an outbound call from an extension to a destination number.
-    
+
     Args:
         extension: The DN/extension number to call FROM
         destination: The phone number to call TO
         timeout: Call timeout in seconds (default 30)
-    
+
     Returns:
         Response JSON on success, None on failure
     """
 
     token = get_access_token()
     if not token:
+        print("[3CX] Failed to get access token")
         return None
-    
+
+    # Step 1: Initiate the call (this will ring the extension first)
     url = f"{PBX_URL}/callcontrol/{extension}/makecall"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
         "destination": destination,
         "timeout": timeout
     }
-    
+
     response = requests.post(url, headers=headers, json=payload, verify=False)
-    
-    if response.status_code in [200, 202]:
-        return response.json()
-    return None
+
+    if response.status_code not in [200, 202]:
+        print(f"[3CX] Failed to initiate call: {response.status_code}")
+        return None
+
+    call_result = response.json()
+    print(f"[3CX] Call initiated to {destination}")
+    return call_result
+
+
+def answer_call(extension: str, participant_id: str, device_id: str = None):
+    """Answer an incoming call"""
+    token = get_access_token()
+    if not token:
+        return False
+
+    # Try device-specific endpoint first if device_id provided
+    if device_id:
+        encoded_device_id = quote(device_id, safe='')
+        url = f"{PBX_URL}/callcontrol/{extension}/devices/{encoded_device_id}/participants/{participant_id}/answer"
+    else:
+        url = f"{PBX_URL}/callcontrol/{extension}/participants/{participant_id}/answer"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, headers=headers, json={}, verify=False)
+
+    # If device-specific failed, try without device
+    if response.status_code not in [200, 202] and device_id:
+        url = f"{PBX_URL}/callcontrol/{extension}/participants/{participant_id}/answer"
+        response = requests.post(url, headers=headers, json={}, verify=False)
+
+    return response.status_code in [200, 202]
+
 
 
 def is_call_active(extension: str, caller_phone: str) -> bool:
@@ -136,11 +172,68 @@ def is_call_active(extension: str, caller_phone: str) -> bool:
             return True
     return False
 
+
+def poll_call_answered(extension: str, timeout: int = 30, poll_interval: float = 1.0) -> dict:
+    """
+    Poll to check if the outbound call has been answered by the target.
+
+    Args:
+        extension: The extension that initiated the call
+        timeout: Max seconds to wait for answer
+        poll_interval: Seconds between polls
+
+    Returns:
+        dict with 'status': 'answered' | 'ringing' | 'no_call' | 'timeout' | 'error'
+        and 'participant' data if found
+    """
+    import time
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        token = get_access_token()
+        if not token:
+            return {'status': 'error', 'reason': 'no_token'}
+
+        participants = get_active_calls(extension, token)
+
+        if not participants:
+            # No active call found - might have ended or not started yet
+            elapsed = time.time() - start_time
+            if elapsed > 5:  # Give some grace period at start
+                return {'status': 'no_call'}
+
+        for p in participants:
+            if p.get('status') == 'Connected':
+                # Check if target has answered (external line connected)
+                if p.get('party_dn_type') == 'Wexternalline':
+                    return {'status': 'answered', 'participant': p}
+                # Otherwise still waiting for target to pick up
+
+        time.sleep(poll_interval)
+
+    return {'status': 'timeout'}
+
+
 #####################################################################################################################
 
 # Testing
 if __name__ == '__main__':
-    # Close all calls on extension 100
-    make_call("0147", "0415500152")
+    extension = "0147"
+    destination = "0415500152"
+
+    print(f"Initiating call from {extension} to {destination}...")
+    result = make_call(extension, destination)
+    print(f"make_call response: {result}")
+
+    if result and result.get('finalstatus') == 'Success':
+        print("\nPolling for answer...")
+        poll_result = poll_call_answered(extension, timeout=60, poll_interval=1.0)
+
+        print(f"\n=== RESULT ===")
+        print(f"Status: {poll_result['status']}")
+        if poll_result.get('participant'):
+            print(f"Participant: {poll_result['participant']}")
+    else:
+        print("Failed to initiate call")
 
     
