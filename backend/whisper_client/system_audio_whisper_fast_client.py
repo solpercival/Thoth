@@ -1,5 +1,10 @@
 import argparse
 import os
+import warnings
+
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import numpy as np
 import torch
 import threading
@@ -409,7 +414,7 @@ class SystemAudioWhisperFastClient:
                     self.data_queue.put({
                         'data': audio_array.tobytes(),
                         'level': audio_level,
-                        'timestamp': datetime.utcnow()
+                        'timestamp': datetime.now(tz=None)
                     })
                 else:
                     sleep(0.1)
@@ -426,7 +431,7 @@ class SystemAudioWhisperFastClient:
                     sleep(0.25)
                     continue
 
-                now = datetime.utcnow()
+                now = datetime.now(tz=None)
 
                 if not self.data_queue.empty():
                     chunks = []
@@ -621,3 +626,28 @@ class SystemAudioWhisperFastClient:
         """Clear the current transcription."""
         self.transcription = ['']
         self._display_transcription()
+
+
+def main():
+    def on_phrase_complete(text):
+        print(f"\n>> {text}")
+
+    client = SystemAudioWhisperFastClient(
+        model="small",
+        on_phrase_complete=on_phrase_complete,
+    )
+
+    client.start()
+    print("Listening to desktop audio... Press Ctrl+C to stop.\n")
+
+    try:
+        while True:
+            sleep(0.1)
+    except KeyboardInterrupt:
+        print("\nStopping...")
+    finally:
+        client.stop()
+
+
+if __name__ == "__main__":
+    main()
