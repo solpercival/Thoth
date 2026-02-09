@@ -36,6 +36,7 @@ import os
 import re
 
 from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
+from whisper_client.system_audio_whisper_fast_client import SystemAudioWhisperFastClient
 from thoth.core.call_assistant.tts_client import TTSClient
 from ollama_client.llm_client import OllamaClient
 
@@ -517,7 +518,7 @@ class ScreeningAgentV2:
             model=os.getenv("LLM_MODEL", "qwen3:8b"),
             system_prompt=""  # Will be set dynamically
         )
-        self.whisper_client = SystemAudioWhisperClient(
+        self.whisper_client = SystemAudioWhisperFastClient(
             on_phrase_complete=self._on_phrase_complete
         )
 

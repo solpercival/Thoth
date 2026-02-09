@@ -17,18 +17,21 @@ import utils
 
 
 class AutoDialControl(QWidget):
+
+    SESSION_POLL_FREQ = 2000  # ms
+
     def __init__(self, phone_list: 'PhoneList' = None):
         super().__init__()
         # State variables
         self.is_auto_dialing: bool = False
-        
+        self.current_session_id: str = None
+
         # References
         self.phone_list = phone_list
 
-        # Timer for auto-dial loop
-        self.dial_timer = QTimer()
-        self.dial_timer.timeout.connect(self._dial_next_number)
-
+        # Timer to poll backend and check if current call has finished
+        self.poll_timer = QTimer()
+        self.poll_timer.timeout.connect(self._check_call_finished)
 
         layout = QVBoxLayout(self)
         self.start_stop_button_layout = QHBoxLayout()
@@ -44,7 +47,6 @@ class AutoDialControl(QWidget):
         self.start_stop_button_layout.addWidget(self.start_button)
         self.start_button.pressed.connect(self._on_auto_dial_start_button_pressed)
 
-
         # Delay VBoxlayout
         delay_layout = QVBoxLayout()
         delay_label = QLabel("Delay (s)")
@@ -58,53 +60,121 @@ class AutoDialControl(QWidget):
         layout.addWidget(self.status_label)
         layout.addLayout(self.start_stop_button_layout)
 
-    
+
     def _on_auto_dial_start_button_pressed(self) -> None:
         self.is_auto_dialing = not self.is_auto_dialing
 
         if self.is_auto_dialing:
-            print("[FRONTEND] Auto Dial started")
-
-            # Start the dial timer using delay from spin box (convert seconds to ms)
-            delay_ms = int(self.delay_spin_box.value() * 1000)
-            if delay_ms < 100:
-                delay_ms = 1000  # Default to 1 second if delay is too small
-            self.dial_timer.start(delay_ms)
-
-            # UI Changes
+            print("[AUTO-DIAL] Started")
             self.start_button.setText("Stop")
             self.start_button.setStyleSheet("background-color: #dc3545; padding: 10px; border-radius: 5px;")
-            self.status_label.setText("Status: Auto-dialing...")
+            # Kick off the first call immediately
+            self._dial_next_number()
         else:
-            print("[FRONTEND] Auto Dial stopped")
-
-            # Stop the timer
-            self.dial_timer.stop()
-
-            # UI Changes
+            print("[AUTO-DIAL] Stopped")
+            self.poll_timer.stop()
+            # If there's an active call, stop it
+            if self.current_session_id:
+                self._stop_current_call()
+            self.current_session_id = None
             self.start_button.setText("Start")
             self.start_button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
             self.status_label.setText("Status: Stopped")
 
-    def _dial_next_number(self) -> None:
-        """Called by timer to dial the next number in the queue"""
-        if not self.phone_list:
-            print("[FRONTEND] No phone list connected!")
-            return
-        
-        next_item = self.phone_list.take_top_number()
-        if next_item:
-            phone_number = next_item.text()
-            print(f"[FRONTEND] Dialing: {phone_number}")
-            self.status_label.setText(f"Status: Dialing {phone_number}")
-        else:
-            # Queue is empty, stop auto-dialing
-            print("[FRONTEND] Queue empty, stopping auto-dial")
-            self.dial_timer.stop()
+    def _stop_current_call(self) -> None:
+        """Tell the backend to stop the current session"""
+        try:
+            requests.post(
+                "http://localhost:5000/stop",
+                json={"session_id": self.current_session_id},
+                timeout=5
+            )
+        except requests.ConnectionError:
+            pass
 
-            # Simulate a person clicking the button
-            if self.is_auto_dialing:
-                self._on_auto_dial_start_button_pressed()
+    def _dial_next_number(self) -> None:
+        """Take the next number from the queue and start a call"""
+        # If it is auto-dialing, quit
+        if not self.is_auto_dialing:
+            return
+
+        if not self.phone_list:
+            print("[AUTO-DIAL] No phone list connected!")
+            return
+
+        # Take the top number, if there are none the queue is empty, so stop
+        next_item = self.phone_list.take_top_number()
+        if not next_item:
+            print("[AUTO-DIAL] Queue empty, stopping")
+            self.is_auto_dialing = False
+            self.start_button.setText("Start")
+            self.start_button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
+            self.status_label.setText("Status: Queue empty")
+            return
+
+        phone_number = next_item.text()
+        print(f"[AUTO-DIAL] Calling: {phone_number}")
+        self.status_label.setText(f"Status: Calling {phone_number}...")
+
+        # Call the phone number
+        try:
+            response = requests.post(
+                "http://localhost:5000/start",
+                json={"caller_phone": phone_number},
+                timeout=10
+            )
+            if response.status_code == 200:
+                self.current_session_id = response.json().get('session_id')
+                # Start the polling loop to detect when this call finishes, if there are no session, move on to the next number
+                self.poll_timer.start(self.SESSION_POLL_FREQ)  # when timeout, call _check_call_finished()
+            else:
+                print(f"[AUTO-DIAL] Call failed: {response.text}")
+                self.status_label.setText(f"Status: Call failed, moving on...")
+                self._schedule_next_call()
+        except requests.ConnectionError:
+            print("[AUTO-DIAL] Backend not running!")
+            self.status_label.setText("Status: Backend not running")
+            self.is_auto_dialing = False
+            self.start_button.setText("Start")
+            self.start_button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
+
+    def _check_call_finished(self) -> None:
+        """Poll backend to see if the current call session has ended"""
+        if not self.current_session_id:
+            self.poll_timer.stop()
+            return
+
+        try:
+            response = requests.get("http://localhost:5000/status", timeout=5)
+            data = response.json()
+            sessions = data.get('sessions', [])
+
+            # Check if our session is still in the active list
+            still_active = any(
+                s['session_id'] == self.current_session_id
+                for s in sessions
+            )
+
+            if not still_active:
+                # Call is done
+                print(f"[AUTO-DIAL] Session {self.current_session_id} finished")
+                self.poll_timer.stop()
+                self.current_session_id = None
+                self.status_label.setText("Status: Call finished, waiting...")
+                self._schedule_next_call()
+
+
+        except requests.ConnectionError:
+            pass
+
+    def _schedule_next_call(self) -> None:
+        """Wait the configured delay then dial the next number"""
+        if not self.is_auto_dialing:
+            return
+        delay_ms = int(self.delay_spin_box.value() * 1000)
+        if delay_ms < 100:
+            delay_ms = 1000
+        QTimer.singleShot(delay_ms, self._dial_next_number)
 
 
 

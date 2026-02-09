@@ -200,17 +200,23 @@ def status():
     sessions_info = []
     for session_id, session in active_sessions.items():
         agent = session['agent']
-        sessions_info.append({
+        info = {
             'session_id': session_id,
             'caller_phone': session.get('caller_phone'),
             'caller_id': session.get('caller_id'),
-            'state': agent.state.name,
-            'call_status': agent.call_status,
-            'questions_answered': len(agent.answers),
-            'total_questions': len(agent.questions),
+            'call_status': session.get('call_status', 'unknown'),
             'uptime': time.time() - session['started_at'],
             'started_at': time.ctime(session['started_at'])
-        })
+        }
+        if agent:
+            info['state'] = agent.state.name
+            info['questions_answered'] = len(agent.answers)
+            info['total_questions'] = len(agent.questions)
+        else:
+            info['state'] = 'WAITING'
+            info['questions_answered'] = 0
+            info['total_questions'] = 0
+        sessions_info.append(info)
 
     return jsonify({
         'active_sessions': len(active_sessions),
@@ -228,20 +234,25 @@ def get_session(session_id):
     session = active_sessions[session_id]
     agent = session['agent']
 
-    return jsonify({
+    info = {
         'session_id': session_id,
         'caller_phone': session.get('caller_phone'),
         'caller_id': session.get('caller_id'),
-        'state': agent.state.name,
-        'call_status': agent.call_status,
-        'current_question_index': agent.current_question_index,
-        'questions_answered': len(agent.answers),
-        'total_questions': len(agent.questions),
-        'answers': agent.answers,
-        'callback_time': agent.callback_time,
+        'call_status': session.get('call_status', 'unknown'),
         'uptime': time.time() - session['started_at'],
         'started_at': time.ctime(session['started_at'])
-    }), 200
+    }
+    if agent:
+        info['state'] = agent.state.name
+        info['current_question_index'] = agent.current_question_index
+        info['questions_answered'] = len(agent.answers)
+        info['total_questions'] = len(agent.questions)
+        info['answers'] = agent.answers
+        info['callback_time'] = agent.callback_time
+    else:
+        info['state'] = 'WAITING'
+
+    return jsonify(info), 200
 
 @app.route('/debug', methods=['POST'])
 def debug():
