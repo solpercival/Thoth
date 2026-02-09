@@ -12,6 +12,8 @@ PBX_URL = os.getenv('PBX_URL')
 CLIENT_ID = os.getenv('CLIENT_ID')  # API CLient ID
 CLIENT_SECRET = os.getenv('CLIENT_SECRET')  # API Key
 
+AGENT_START_DELAY = 2.0
+
 def get_access_token():
     """Get access token for API calls"""
     token_url = f"{PBX_URL}/connect/token"

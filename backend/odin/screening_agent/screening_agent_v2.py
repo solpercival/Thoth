@@ -116,6 +116,8 @@ RULES:
 
 4. If the response is unclear, ask for clarification.
 
+5. VOICEMAIL DETECTION: If the user's response sounds like a voicemail greeting or automated message (e.g. "please leave a message after the beep", "is not available right now", "the person you are calling", "voicemail", "record your message"), output <END> immediately. Do NOT leave a message or continue speaking.
+
 CONVERSATION HISTORY:
 {chat_history}
 
@@ -510,7 +512,7 @@ class ScreeningAgentV2:
     def _run(self) -> None:
         """Internal method that runs the screening flow."""
         # Initialize clients
-        self.tts_client = TTSClient()
+        self.tts_client = TTSClient(output_device_name="CABLE Input")
         self.llm_client = OllamaClient(
             model=os.getenv("LLM_MODEL", "qwen3:8b"),
             system_prompt=""  # Will be set dynamically

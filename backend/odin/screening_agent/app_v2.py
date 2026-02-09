@@ -16,7 +16,10 @@ import uuid
 import os
 
 from odin.screening_agent.screening_agent_v2 import ScreeningAgentV2
-from odin.screening_agent.call_3cx_client import make_call
+from odin.screening_agent.call_3cx_client import make_call, poll_call_answered
+
+
+AGENT_START_DELAY = 2.0
 
 # For testing
 TEST_MODE = True  # Set to true to use test phone number (as the caller number)
@@ -62,6 +65,7 @@ def start_screening():
         print(f"[APP_V2] TEST MODE - Using preset number: {caller_phone}")
 
     # Create unique session ID
+    stop_event = Event()
     session_id = f"{caller_phone}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
     # Check if session already exists for this phone
@@ -72,60 +76,61 @@ def start_screening():
                 'session_id': sid
             }), 409
 
+    # Store session immediately (with 'ringing' status)
+    active_sessions[session_id] = {
+        'agent': None,
+        'thread': None,
+        'stop_event': stop_event,
+        'started_at': time.time(),
+        'caller_phone': caller_phone,
+        'caller_id': caller_id,
+        'call_status': 'ringing'  # track the state
+    }
 
-    # Actually call the phone number
-    extension = os.getenv('EXTENSION', '0147')  # Your extension
-    call_result = make_call(extension, caller_phone)
+    # NOTE: We make it into a function here so that we can run it on a seperate thread
+    def poll_and_start_agent():
+        # Actually call the phone number
+        extension = os.getenv('EXTENSION', '0147')  # Your extension
+        call_result = make_call(extension, caller_phone)
     
-    if not call_result:
-        return jsonify({
-            'error': 'Failed to initiate call',
-            'caller_phone': caller_phone
-        }), 500
-    
-    print(f"[APP_V2] Call initiated: {call_result}")
+        # Wait for users to pickup, only then create the screening agent (which auto starts)
+        poll_result = poll_call_answered(extension, timeout=60, poll_interval=1.0)
+        # User failed to pick up, delete this session and return
+        if poll_result['status'] != 'answered':
+            print(f"[APP_V2] Call not answered: {poll_result['status']}")
+            active_sessions[session_id]['call_status'] = poll_result['status']
+            if session_id in active_sessions:
+                del active_sessions[session_id]
+            return
+        
+        # Call is answered! Wait a moment for audio connection to stabilize
+        print(f"[APP_V2] Call answered! Waiting for connection to stabilize...")
+        active_sessions[session_id]['call_status'] = 'answered'
+        time.sleep(AGENT_START_DELAY)
 
-
-    # Create the screening agent
-    """print(f"[APP_V2] Creating ScreeningAgentV2 for {caller_phone}")
-    agent = ScreeningAgentV2(caller_id=caller_id, caller_number=caller_phone)
-    stop_event = Event()
-
-    def run_agent():
-        Run the agent in a thread
+        print(f"[APP_V2] Starting ScreeningAgentV2")
+        agent = ScreeningAgentV2(caller_id=caller_id, caller_number=caller_phone)
+        active_sessions[session_id]['agent'] = agent
+        
         try:
             agent.start()
-
-            # Wait for agent to finish or stop event
             while agent._agent_thread and agent._agent_thread.is_alive():
                 if stop_event.is_set():
                     agent.stop()
                     break
                 time.sleep(0.5)
-
         except Exception as e:
             print(f"[APP_V2] ERROR: {e}")
         finally:
-            # Clean up session
             if session_id in active_sessions:
                 del active_sessions[session_id]
-            print(f"[APP_V2] Session {session_id} ended")
 
-    # Start the agent thread
-    print(f"[APP_V2] Starting agent thread for session {session_id}")
-    thread = Thread(target=run_agent, daemon=True)
+    # Create the thread and assign the function to it
+    thread = Thread(target=poll_and_start_agent, daemon=True)
     thread.start()
+    active_sessions[session_id]['thread'] = thread
 
-    # Store session
-    active_sessions[session_id] = {
-        'agent': agent,
-        'thread': thread,
-        'stop_event': stop_event,
-        'started_at': time.time(),
-        'caller_phone': caller_phone,
-        'caller_id': caller_id
-    }"""
-
+    # Return success to frontend
     return jsonify({
         'status': 'started',
         'session_id': session_id,
