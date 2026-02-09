@@ -16,7 +16,7 @@ import uuid
 import os
 
 from odin.screening_agent.screening_agent_v2 import ScreeningAgentV2
-from odin.screening_agent.call_3cx_client import make_call, poll_call_answered
+from odin.screening_agent.call_3cx_client import make_call, poll_call_answered, drop_call, get_access_token
 
 
 AGENT_START_DELAY = 2.0
@@ -103,9 +103,11 @@ def start_screening():
                 del active_sessions[session_id]
             return
         
-        # Call is answered! Wait a moment for audio connection to stabilize
+        # Call is answered! Store participant info for targeted hangup later
         print(f"[APP_V2] Call answered! Waiting for connection to stabilize...")
         active_sessions[session_id]['call_status'] = 'answered'
+        active_sessions[session_id]['participant'] = poll_result.get('participant')
+        active_sessions[session_id]['extension'] = extension
         time.sleep(AGENT_START_DELAY)
 
         print(f"[APP_V2] Starting ScreeningAgentV2")
@@ -171,7 +173,20 @@ def stop_screening():
     # Signal the agent to stop
     print(f"[APP_V2] Stopping session {session_id_to_end}")
     session_to_end['stop_event'].set()
-    session_to_end['agent'].stop()
+    if session_to_end['agent']:
+        session_to_end['agent'].stop()
+
+    # Hang up the call
+    extension = session_to_end.get('extension', os.getenv('EXTENSION', '0147'))
+    participant = session_to_end.get('participant')
+    if participant:
+        token = get_access_token()
+        if token:
+            participant_id = participant['id']
+            print(f"[APP_V2] Dropping call participant {participant_id}")
+            drop_call(extension, participant_id, token)
+    else:
+        print(f"[APP_V2] No participant data stored, cannot drop call")
 
     return jsonify({
         'status': 'stopped',

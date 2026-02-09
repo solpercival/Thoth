@@ -91,7 +91,7 @@ class AutoDialControl(QWidget):
         if not self.phone_list:
             print("[FRONTEND] No phone list connected!")
             return
-
+        
         next_item = self.phone_list.take_top_number()
         if next_item:
             phone_number = next_item.text()
@@ -241,10 +241,6 @@ class PhoneList(QWidget):
             # Finally, call the backend
             try:
                 # UI change telling that were processing the call function
-                # TODO: Make these two lines work!
-                # self.call_button.setText("Calling...")
-                # self.call_button.setStyleSheet("background-color: #6c757d;")
-
                 response = requests.post(
                     "http://localhost:5000/start",
                     json={"caller_phone": phone_number}
