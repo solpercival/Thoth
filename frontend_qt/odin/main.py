@@ -20,14 +20,16 @@ class AutoDialControl(QWidget):
 
     SESSION_POLL_FREQ = 2000  # ms
 
-    def __init__(self, phone_list: 'PhoneList' = None):
+    def __init__(self, phone_list: 'PhoneList' = None, failed_list: 'FailedCallsList' = None):
         super().__init__()
         # State variables
         self.is_auto_dialing: bool = False
         self.current_session_id: str = None
+        self.current_phone_number: str = None
 
         # References
         self.phone_list = phone_list
+        self.failed_list = failed_list
 
         # Timer to poll backend and check if current call has finished
         self.poll_timer = QTimer()
@@ -77,6 +79,7 @@ class AutoDialControl(QWidget):
             if self.current_session_id:
                 self._stop_current_call()
             self.current_session_id = None
+            self.current_phone_number = None
             self.start_button.setText("Start")
             self.start_button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
             self.status_label.setText("Status: Stopped")
@@ -113,6 +116,7 @@ class AutoDialControl(QWidget):
             return
 
         phone_number = next_item.text()
+        self.current_phone_number = phone_number
         print(f"[AUTO-DIAL] Calling: {phone_number}")
         self.status_label.setText(f"Status: Calling {phone_number}...")
 
@@ -129,10 +133,16 @@ class AutoDialControl(QWidget):
                 self.poll_timer.start(self.SESSION_POLL_FREQ)  # when timeout, call _check_call_finished()
             else:
                 print(f"[AUTO-DIAL] Call failed: {response.text}")
+                if self.failed_list and self.current_phone_number:
+                    self.failed_list.add_number(self.current_phone_number)
+                self.current_phone_number = None
                 self.status_label.setText(f"Status: Call failed, moving on...")
                 self._schedule_next_call()
         except requests.ConnectionError:
             print("[AUTO-DIAL] Backend not running!")
+            if self.failed_list and self.current_phone_number:
+                self.failed_list.add_number(self.current_phone_number)
+            self.current_phone_number = None
             self.status_label.setText("Status: Backend not running")
             self.is_auto_dialing = False
             self.start_button.setText("Start")
@@ -156,14 +166,37 @@ class AutoDialControl(QWidget):
             )
 
             if not still_active:
-                # Call is done
+                # Call is done — check if it failed or succeeded
                 print(f"[AUTO-DIAL] Session {self.current_session_id} finished")
+                self._check_call_result()
                 self.poll_timer.stop()
                 self.current_session_id = None
+                self.current_phone_number = None
                 self.status_label.setText("Status: Call finished, waiting...")
                 self._schedule_next_call()
 
 
+        except requests.ConnectionError:
+            pass
+
+    def _check_call_result(self) -> None:
+        """Check backend for the call result and move to failed list if needed"""
+        if not self.current_session_id or not self.current_phone_number:
+            return
+        try:
+            response = requests.get(
+                f"http://localhost:5000/call-result/{self.current_session_id}",
+                timeout=5
+            )
+            if response.status_code == 200:
+                data = response.json()
+                result = data.get('result', 'unknown')
+                if result in ('no_answer', 'failed'):
+                    print(f"[AUTO-DIAL] Call failed ({result}): {self.current_phone_number}")
+                    if self.failed_list:
+                        self.failed_list.add_number(self.current_phone_number)
+                else:
+                    print(f"[AUTO-DIAL] Call result: {result}")
         except requests.ConnectionError:
             pass
 
@@ -369,6 +402,75 @@ class PhoneList(QWidget):
 
 
 
+class FailedCallsList(QWidget):
+    def __init__(self, phone_list: 'PhoneList' = None):
+        super().__init__()
+        self.phone_list = phone_list
+        layout = QVBoxLayout(self)
+        buttons_layout = QHBoxLayout()
+
+        title = QLabel("Failed Calls")
+        title.setFont(QFont("Arial", 16, 700))
+
+        self.list_widget = QListWidget()
+
+        retry_button = QPushButton("Retry")
+        retry_button.setStyleSheet("background-color: #ffc107; color: black;")
+        retry_button.pressed.connect(self._retry_selected)
+
+        retry_all_button = QPushButton("Retry All")
+        retry_all_button.setStyleSheet("background-color: #ffc107; color: black;")
+        retry_all_button.pressed.connect(self._retry_all)
+
+        clear_button = QPushButton("Clear")
+        clear_button.setStyleSheet("background-color: #dc3545;")
+        clear_button.pressed.connect(self._clear_all)
+
+        buttons_layout.addWidget(retry_button)
+        buttons_layout.addWidget(retry_all_button)
+        buttons_layout.addWidget(clear_button)
+
+        layout.addWidget(title)
+        layout.addWidget(self.list_widget)
+        layout.addLayout(buttons_layout)
+
+        self._load_list()
+
+    def add_number(self, phone_number: str) -> None:
+        self.list_widget.addItem(phone_number)
+
+    def _retry_selected(self) -> None:
+        current_item = self.list_widget.currentItem()
+        if current_item and self.phone_list:
+            self.phone_list.list_widget.addItem(current_item.text())
+            self.list_widget.takeItem(self.list_widget.row(current_item))
+
+    def _retry_all(self) -> None:
+        if not self.phone_list:
+            return
+        while self.list_widget.count() > 0:
+            item = self.list_widget.takeItem(0)
+            self.phone_list.list_widget.addItem(item.text())
+
+    def _clear_all(self) -> None:
+        self.list_widget.clear()
+
+    def _load_list(self) -> None:
+        try:
+            with open("failed_numbers.txt", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        self.list_widget.addItem(line)
+        except FileNotFoundError:
+            pass
+
+    def save_list(self) -> None:
+        with open("failed_numbers.txt", "w") as f:
+            for i in range(self.list_widget.count()):
+                f.write(self.list_widget.item(i).text() + "\n")
+
+
 ################################################################################
 # MAIN WINDOW
 ################################################################################
@@ -391,7 +493,7 @@ class MainWindow(QWidget):
         ###############################################################################
         # Window settings
         self.setWindowTitle("HAHS AI Odin Screening Assistant v0.5")
-        self.setMinimumSize(400, 400)
+        self.setMinimumSize(400, 900)
 
         # Create layout (vertical stack)
         layout = QVBoxLayout()
@@ -411,6 +513,8 @@ class MainWindow(QWidget):
         app_banner.setPixmap(pixmap)
 
         # The start button
+        start_backend_label = QLabel("Backend")
+        start_backend_label.setFont(QFont("Arial", 16, 700))
         self.button = QPushButton("Start")
         self.button.clicked.connect(self.on_button_click)  # Connect click to function
         self.button.setObjectName("startButton")
@@ -420,19 +524,25 @@ class MainWindow(QWidget):
         # The phone list widget
         self.phone_list = PhoneList()
 
-        # The auto dial widget (pass phone_list reference for queue access)
-        self.auto_dial = AutoDialControl(phone_list=self.phone_list)
+        # The failed calls list widget
+        self.failed_list = FailedCallsList(phone_list=self.phone_list)
+
+        # The auto dial widget (pass phone_list and failed_list references)
+        self.auto_dial = AutoDialControl(phone_list=self.phone_list, failed_list=self.failed_list)
 
         # Add widgets to layout
         layout.addWidget(title)
         layout.addWidget(app_banner)
-        layout.addSpacing(40)
+        layout.addSpacing(20)
+        layout.addWidget(start_backend_label)
         layout.addWidget(self.button)
-        layout.addSpacing(40)
+        layout.addSpacing(20)
         layout.addWidget(self.phone_list)
         layout.addSpacing(10)
         layout.addWidget(self.auto_dial)
-        layout.addSpacing(40)
+        layout.addSpacing(10)
+        layout.addWidget(self.failed_list)
+        layout.addSpacing(20)
 
         layout.addStretch()  # Flexible space instead of fixed, do this to prevent elements not being squished
         layout.addWidget(self.status)
@@ -581,6 +691,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         self.phone_list.save_list()
+        self.failed_list.save_list()
         event.accept()
 
 

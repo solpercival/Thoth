@@ -205,6 +205,7 @@ def poll_call_answered(extension: str, timeout: int = 30, poll_interval: float =
                 return {'status': 'no_call'}
 
         for p in participants:
+            print(f"[POLL] Participant: status={p.get('status')}, dn_type={p.get('party_dn_type')}, caller={p.get('party_caller_id')}")
             if p.get('status') == 'Connected':
                 # Check if target has answered (external line connected)
                 if p.get('party_dn_type') == 'Wexternalline':

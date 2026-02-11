@@ -29,6 +29,7 @@ app = Flask(__name__)
 
 # Store active screening sessions
 active_sessions = {}
+call_results = {}  # Stores results of completed/failed calls for frontend to query
 
 
 @app.route('/health', methods=['GET'])
@@ -95,10 +96,15 @@ def start_screening():
     
         # Wait for users to pickup, only then create the screening agent (which auto starts)
         poll_result = poll_call_answered(extension, timeout=60, poll_interval=1.0)
-        # User failed to pick up, delete this session and return
+        # User failed to pick up, store result and delete this session
         if poll_result['status'] != 'answered':
             print(f"[APP_V2] Call not answered: {poll_result['status']}")
             active_sessions[session_id]['call_status'] = poll_result['status']
+            call_results[session_id] = {
+                'caller_phone': caller_phone,
+                'result': 'no_answer',
+                'call_status': poll_result['status'],
+            }
             if session_id in active_sessions:
                 del active_sessions[session_id]
             return
@@ -136,6 +142,20 @@ def start_screening():
                     print(f"[APP_V2] Agent finished — failed to get token to drop call")
             else:
                 print(f"[APP_V2] Agent finished — no participant data, cannot drop call")
+
+            # Store result for frontend to query
+            if stop_event.is_set():
+                result = 'stopped'
+            elif agent and len(agent.answers) == 0:
+                result = 'no_answer'  # Likely voicemail — agent ended without getting any answers
+                print(f"[APP_V2] Agent finished with 0 answers — likely voicemail")
+            else:
+                result = 'completed'
+            call_results[session_id] = {
+                'caller_phone': active_sessions.get(session_id, {}).get('caller_phone', 'unknown'),
+                'result': result,
+                'call_status': active_sessions.get(session_id, {}).get('call_status', 'unknown'),
+            }
 
             if session_id in active_sessions:
                 del active_sessions[session_id]
@@ -235,6 +255,15 @@ def status():
         'active_sessions': len(active_sessions),
         'sessions': sessions_info
     }), 200
+
+
+@app.route('/call-result/<session_id>', methods=['GET'])
+def get_call_result(session_id):
+    """Get the result of a completed call and remove it from results"""
+    if session_id in call_results:
+        result = call_results.pop(session_id)
+        return jsonify(result), 200
+    return jsonify({'error': 'No result found'}), 404
 
 
 @app.route('/session/<session_id>', methods=['GET'])
