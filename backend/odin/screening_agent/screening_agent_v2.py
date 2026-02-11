@@ -37,7 +37,7 @@ import re
 
 from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
 from whisper_client.system_audio_whisper_fast_client import SystemAudioWhisperFastClient
-from thoth.core.call_assistant.tts_client import TTSClient
+from tts_client.tts_client import TTSClient
 from ollama_client.llm_client import OllamaClient
 
 
@@ -83,7 +83,7 @@ class Scripts:
     INTRO = "Hello this is Help at Hands Calling! Do you have a moment for a few quick questions?"
 
     # Closing message - when all questions are answered
-    OUTRO = "That concludes all the questions. Thank you for your time. I;ve recorded all your questions."
+    OUTRO = "That concludes all the questions. Thank you for your time. I've recorded all your questions. Good day."
 
     # When no questions are loaded
     NO_QUESTIONS = "I don't have any questions to ask. Thank you for your time."
@@ -591,6 +591,15 @@ class ScreeningAgentV2:
                 output += f"   Answer: {answer}\n\n"
         else:
             output += "ANSWERS: None recorded\n"
+
+        # Write full chat history
+        if self.chat_history:
+            output += "\n"
+            output += "FULL CHAT HISTORY:\n"
+            output += "=" * 40 + "\n"
+            for msg in self.chat_history:
+                output += f"{msg['role'].upper()}: {msg['content']}\n"
+            output += "=" * 40 + "\n"
 
         with open(filepath, "w") as f:
             f.write(output)

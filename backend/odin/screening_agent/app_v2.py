@@ -22,7 +22,7 @@ from odin.screening_agent.call_3cx_client import make_call, poll_call_answered, 
 AGENT_START_DELAY = 2.0
 
 # For testing
-TEST_MODE = True  # Set to true to use test phone number (as the caller number)
+TEST_MODE = False  # Set to true to use test phone number (as the caller number)
 TEST_NUMBER = "0415500152"
 
 app = Flask(__name__)
@@ -124,6 +124,19 @@ def start_screening():
         except Exception as e:
             print(f"[APP_V2] ERROR: {e}")
         finally:
+            # Drop the call when the agent finishes (interview complete, user ended, etc.)
+            participant = active_sessions.get(session_id, {}).get('participant')
+            if participant:
+                token = get_access_token()
+                if token:
+                    participant_id = participant['id']
+                    print(f"[APP_V2] Agent finished — dropping call participant {participant_id}")
+                    drop_call(extension, participant_id, token)
+                else:
+                    print(f"[APP_V2] Agent finished — failed to get token to drop call")
+            else:
+                print(f"[APP_V2] Agent finished — no participant data, cannot drop call")
+
             if session_id in active_sessions:
                 del active_sessions[session_id]
 

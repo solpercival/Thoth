@@ -36,7 +36,7 @@ class TTSClient:
         self.volume = volume
         self.voice = voice
         self.system = platform.system()
-        
+
         # Determine the correct output device based on OS
         if output_device_name:
             if self.system == "Linux":
@@ -80,27 +80,27 @@ class TTSClient:
             # Create temp file for MP3
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as f:
                 temp_mp3 = f.name
-            
+
             # Generate speech with edge-tts
             # Convert rate to edge-tts format: +0%, -20%, +50%, etc.
             rate_percent = int(((self.rate / 150.0) - 1) * 100)
             rate_str = f"+{rate_percent}%" if rate_percent >= 0 else f"{rate_percent}%"
-            
+
             asyncio.run(self._generate_speech(text, temp_mp3, rate_str))
-            
+
             # Convert MP3 to WAV using pydub
             audio = AudioSegment.from_mp3(temp_mp3)
-            
+
             # Adjust volume
             if self.volume != 1.0:
                 db_change = 20 * (self.volume - 1.0)
                 audio = audio + db_change
-            
+
             # Export to temporary WAV file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as f:
                 temp_wav = f.name
             audio.export(temp_wav, format='wav')
-            
+
             # Play the WAV file
             self._play_audio_file(temp_wav)
 
@@ -133,7 +133,7 @@ class TTSClient:
                 return
             except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
                 print("[TTS] paplay failed, using PyAudio fallback")
-        
+
         # Use PyAudio (Windows or Linux fallback)
         p = pyaudio.PyAudio()
 
@@ -170,5 +170,5 @@ if __name__ == "__main__":
         text = input(">> ")
         if text.lower() == "quit":
             break
-    
+
         tts_client.text_to_speech(text)

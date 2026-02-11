@@ -1,6 +1,6 @@
 from pathlib import Path
 from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
-from thoth.core.call_assistant.tts_client import TTSClient
+from tts_client.tts_client import TTSClient
 import threading
 from datetime import date
 import os
