@@ -35,4 +35,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import socket; socket.create_connection(('localhost', 5000), timeout=5)" || exit 1
 
 # Start the backend
-CMD ["python", "thoth/core/call_assistant/app_v3.py"]
+CMD ["python", "thoth/core/call_assistant/app_v5.py"]

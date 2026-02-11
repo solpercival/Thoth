@@ -35,7 +35,6 @@ import threading
 import os
 import re
 
-from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
 from whisper_client.system_audio_whisper_fast_client import SystemAudioWhisperFastClient
 from tts_client.tts_client import TTSClient
 from ollama_client.llm_client import OllamaClient
@@ -384,16 +383,16 @@ class ScreeningAgentV2:
         # Handle tags
         if parsed['tag'] == 'END':
             self._log("User wants to end call")
-            self.call_status = "Call ended"
+            self.call_status = "Not Completed - User requested to stop"
             return False
 
         elif parsed['tag'] == 'NO':
             # User not available, store callback time
             self.callback_time = parsed['data']
             if self.callback_time:
-                self.call_status = f"Not available - Callback: {self.callback_time}"
+                self.call_status = f"Unavailable - Callback: {self.callback_time}"
             else:
-                self.call_status = "Not available - No callback provided"
+                self.call_status = "Unavailable - No callback provided"
             self._log(f"User not available. Callback time: {self.callback_time}")
             return False
 
@@ -438,7 +437,7 @@ class ScreeningAgentV2:
         # Handle tags
         if parsed['tag'] == 'END':
             self._log("User wants to end call")
-            self.call_status = "Call ended"
+            self.call_status = "Not Completed - User requested to stop"
             return False
 
         elif parsed['tag'] == 'NEXT':
@@ -462,7 +461,7 @@ class ScreeningAgentV2:
             else:
                 # All questions answered
                 self._log("All questions answered")
-                self.call_status = "Interview completed"
+                self.call_status = "Completed - All questions answered"
                 self._speak(Scripts.OUTRO)
                 return False
 
@@ -556,7 +555,7 @@ class ScreeningAgentV2:
 
         # If status is still "In Progress", the call was interrupted
         if self.call_status == "In Progress":
-            self.call_status = "Call interrupted"
+            self.call_status = "Dropped - Unexpected interruption"
 
         # Always generate a log
         self._generate_log()
@@ -576,7 +575,7 @@ class ScreeningAgentV2:
         output += f"STATUS: {self.call_status}\n"
 
         # If interrupted, show last thing the user said
-        if self.call_status == "Call interrupted" and self.last_user_input:
+        if self.call_status == "Dropped - Unexpected interruption" and self.last_user_input:
             output += f"LAST HEARD: {self.last_user_input}\n"
 
         output += "\n"
