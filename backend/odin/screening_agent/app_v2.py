@@ -11,6 +11,7 @@ sys.path.insert(0, str(backend_root))
 
 from flask import Flask, request, jsonify
 from threading import Thread, Event
+import logging
 import time
 import uuid
 import os
@@ -26,6 +27,14 @@ TEST_MODE = False  # Set to true to use test phone number (as the caller number)
 TEST_NUMBER = "0415500152"
 
 app = Flask(__name__)
+
+# Suppress Flask/werkzeug request logs for noisy polling endpoints
+class QuietStatusFilter(logging.Filter):
+    def filter(self, record):
+        msg = record.getMessage()
+        return '/status' not in msg and '/health' not in msg
+
+logging.getLogger('werkzeug').addFilter(QuietStatusFilter())
 
 # Store active screening sessions
 active_sessions = {}

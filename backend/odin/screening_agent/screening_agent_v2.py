@@ -91,6 +91,15 @@ class Scripts:
     # Error recovery message
     ERROR = "Sorry, I encountered an error. Let me try again."
 
+    # Silence handling
+    SILENCE_REPROMPT = "Are you still there?"
+    SILENCE_HANGUP = "It seems like you're no longer there. I'll end the call now. Goodbye."
+
+
+# Silence timeout thresholds (seconds)
+SILENCE_REPROMPT_TIMEOUT = 25  # Seconds of silence before asking "Are you still there?"
+SILENCE_HANGUP_TIMEOUT = 45    # Seconds of silence before ending the call
+
 
 # =============================================================================
 # SYSTEM PROMPTS
@@ -220,6 +229,11 @@ class ScreeningAgentV2:
         # Threading controls
         self._stop_requested = threading.Event()
         self._agent_thread: Optional[threading.Thread] = None
+        self._processing_lock = threading.Lock()
+
+        # Silence tracking
+        self.last_activity_time: float = 0
+        self._silence_reprompted: bool = False
 
         # Clients (to be initialized in _run)
         self.tts_client = None
@@ -485,30 +499,35 @@ class ScreeningAgentV2:
         self._log(f"USER: {phrase}")
         self._log(f"STATE: {self.state.name}")
 
-        # Pause whisper while processing
-        self.whisper_client.pause()
+        with self._processing_lock:
+            # Pause whisper while processing
+            self.whisper_client.pause()
 
-        try:
-            # Route to appropriate state handler, state handlers return true if user wants to end the call,
-            # False otherwise
-            if self.state == State.AVAILABILITY:
-                should_continue = self._handle_availability(phrase)
-            else:  # INTERVIEW
-                should_continue = self._handle_interview(phrase)
+            # Reset silence tracking — user just spoke
+            self._silence_reprompted = False
 
-            # If there are any indication that we should stop the call, stop it
-            if not should_continue:
-                self._stop_requested.set()
-                return
+            try:
+                # Route to appropriate state handler, state handlers return true if user wants to end the call,
+                # False otherwise
+                if self.state == State.AVAILABILITY:
+                    should_continue = self._handle_availability(phrase)
+                else:  # INTERVIEW
+                    should_continue = self._handle_interview(phrase)
 
-        except Exception as e:
-            self._log(f"ERROR: {e}")
-            self._speak(Scripts.ERROR)
+                # If there are any indication that we should stop the call, stop it
+                if not should_continue:
+                    self._stop_requested.set()
+                    return
 
-        finally:
-            # Resume whisper if still running
-            if not self._stop_requested.is_set():
-                self.whisper_client.resume()
+            except Exception as e:
+                self._log(f"ERROR: {e}")
+                self._speak(Scripts.ERROR)
+
+            finally:
+                # Resume whisper if still running and reset silence timer
+                if not self._stop_requested.is_set():
+                    self.whisper_client.resume()
+                    self.last_activity_time = time.time()
 
     def _run(self) -> None:
         """Internal method that runs the screening flow."""
@@ -529,10 +548,48 @@ class ScreeningAgentV2:
 
             # Start whisper client
             self.whisper_client.start()
+            self.last_activity_time = time.time()
 
-            # Wait until stop is requested
+            # Wait until stop is requested, checking for silence periodically
             while not self._stop_requested.is_set():
-                self._stop_requested.wait(timeout=0.5)
+                self._stop_requested.wait(timeout=1.0)
+
+                if self._stop_requested.is_set() or self.last_activity_time == 0:
+                    break
+
+                silence_duration = time.time() - self.last_activity_time
+
+                # 30s silence → end the call
+                if silence_duration >= SILENCE_HANGUP_TIMEOUT:
+                    with self._processing_lock:
+                        # Re-check after acquiring lock (call may have ended or user may have spoken)
+                        if self._stop_requested.is_set():
+                            break
+                        silence_duration = time.time() - self.last_activity_time
+                        if silence_duration < SILENCE_HANGUP_TIMEOUT:
+                            continue
+                        self._log(f"Silence timeout ({SILENCE_HANGUP_TIMEOUT}s) — ending call")
+                        self.whisper_client.pause()
+                        self._speak(Scripts.SILENCE_HANGUP)
+                        self.call_status = "Dropped - Silence timeout"
+                        self._stop_requested.set()
+
+                # 15s silence → re-prompt once
+                elif silence_duration >= SILENCE_REPROMPT_TIMEOUT and not self._silence_reprompted:
+                    with self._processing_lock:
+                        # Re-check after acquiring lock (call may have ended or user may have spoken)
+                        if self._stop_requested.is_set():
+                            break
+                        silence_duration = time.time() - self.last_activity_time
+                        if silence_duration < SILENCE_REPROMPT_TIMEOUT or self._silence_reprompted:
+                            continue
+                        self._log(f"Silence detected ({SILENCE_REPROMPT_TIMEOUT}s) — re-prompting")
+                        self.whisper_client.pause()
+                        self._add_to_history("assistant", Scripts.SILENCE_REPROMPT)
+                        self._speak(Scripts.SILENCE_REPROMPT)
+                        self._silence_reprompted = True
+                        self.last_activity_time = time.time()
+                        self.whisper_client.resume()
 
         except KeyboardInterrupt:
             self._log("Interrupted by user")

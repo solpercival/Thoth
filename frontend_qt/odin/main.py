@@ -214,6 +214,9 @@ class AutoDialControl(QWidget):
 
 
 class PhoneList(QWidget):
+
+    SESSION_POLL_FREQ = 2000  # ms
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -223,6 +226,12 @@ class PhoneList(QWidget):
         # State variables and others
         self.is_in_call: bool = False
         self.current_session_id: str = None
+        self.current_phone_number: str = None
+        self.failed_list: 'FailedCallsList' = None
+
+        # Timer to poll backend for manual call status
+        self.poll_timer = QTimer()
+        self.poll_timer.timeout.connect(self._check_call_finished)
         
         # The list
         self.list_widget = QListWidget()
@@ -282,6 +291,55 @@ class PhoneList(QWidget):
         self.is_in_call = False
 
 
+    def _check_call_finished(self) -> None:
+        """Poll backend to detect when a manual call ends"""
+        if not self.current_session_id:
+            self.poll_timer.stop()
+            return
+
+        try:
+            response = requests.get("http://localhost:5000/status", timeout=5)
+            data = response.json()
+            sessions = data.get('sessions', [])
+
+            still_active = any(
+                s['session_id'] == self.current_session_id
+                for s in sessions
+            )
+
+            if not still_active:
+                print(f"[FRONTEND] Session {self.current_session_id} ended")
+                self.poll_timer.stop()
+                # Check call result and add to failed list if needed
+                self._check_call_result()
+                self.current_session_id = None
+                self.current_phone_number = None
+                self.reset_button()
+
+        except requests.ConnectionError:
+            pass
+
+    def _check_call_result(self) -> None:
+        """Check backend for the call result and move to failed list if needed"""
+        if not self.current_session_id or not self.current_phone_number:
+            return
+        try:
+            response = requests.get(
+                f"http://localhost:5000/call-result/{self.current_session_id}",
+                timeout=5
+            )
+            if response.status_code == 200:
+                data = response.json()
+                result = data.get('result', 'unknown')
+                if result in ('no_answer', 'failed'):
+                    print(f"[FRONTEND] Call failed ({result}): {self.current_phone_number}")
+                    if self.failed_list:
+                        self.failed_list.add_number(self.current_phone_number)
+                else:
+                    print(f"[FRONTEND] Call result: {result}")
+        except requests.ConnectionError:
+            pass
+
     def take_top_number(self) -> str:
         first_item = self.list_widget.takeItem(0)  # Returns a QListWidgetItem (use .text() to retrieve content)
 
@@ -333,7 +391,10 @@ class PhoneList(QWidget):
         if not self.is_in_call:
             # Extract the selected phone number
             current_item = self.list_widget.currentItem()
-            if not current_item:
+            if current_item:
+                # Remove from queue
+                self.list_widget.takeItem(self.list_widget.row(current_item))
+            else:
                 # Check the top of the list if there are none selected
                 current_item = self.take_top_number()
                 if not current_item:
@@ -341,6 +402,7 @@ class PhoneList(QWidget):
                     self.reset_button()
                     return
             phone_number = current_item.text()
+            self.current_phone_number = phone_number
             # Finally, call the backend
             try:
                 # UI change telling that were processing the call function
@@ -360,20 +422,26 @@ class PhoneList(QWidget):
                     self.call_button.setText("End Call")
                     self.call_button.setStyleSheet("background-color: #dc3545;")
 
-                
+                    # Start polling to detect when call ends
+                    self.poll_timer.start(self.SESSION_POLL_FREQ)
+
+
                 # Sadness
                 else:
                     print(f"[FRONTEND] Failed to start call: {response.text}")
-
-                    # Change the UI
+                    self.list_widget.insertItem(0, phone_number)
+                    self.current_phone_number = None
                     self.reset_button()
 
             except requests.ConnectionError:
                 print("[FRONTEND] Backend not running!")
+                self.list_widget.insertItem(0, phone_number)
+                self.current_phone_number = None
                 self.reset_button()
 
         # Call is already on going so drop it
         else:
+            self.poll_timer.stop()
             try:
                 response = requests.post(
                     "http://localhost:5000/stop",
@@ -387,6 +455,7 @@ class PhoneList(QWidget):
                 print("[FRONTEND] Backend not running!")
             finally:
                 self.current_session_id = None
+                self.current_phone_number = None
                 self.reset_button()
 
 
@@ -526,6 +595,7 @@ class MainWindow(QWidget):
 
         # The failed calls list widget
         self.failed_list = FailedCallsList(phone_list=self.phone_list)
+        self.phone_list.failed_list = self.failed_list
 
         # The auto dial widget (pass phone_list and failed_list references)
         self.auto_dial = AutoDialControl(phone_list=self.phone_list, failed_list=self.failed_list)
