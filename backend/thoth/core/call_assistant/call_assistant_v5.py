@@ -21,6 +21,7 @@ import asyncio
 import os
 from time import sleep
 from threading import Event
+from datetime import date
 from enum import Enum, auto
 from typing import Optional, Dict, Any, List
 
@@ -711,7 +712,9 @@ class CallAssistantV5:
             self._cleanup()
 
     def _cleanup(self) -> None:
-        """Clean up audio resources."""
+        """Clean up audio resources and generate log."""
+        self._generate_log()
+
         if self.whisper_client:
             self.whisper_client.is_running = False
             sleep(0.5)
@@ -723,6 +726,49 @@ class CallAssistantV5:
                     self.whisper_client.stream.close()
                 if self.whisper_client.pyaudio_instance:
                     self.whisper_client.pyaudio_instance.terminate()
+
+    def _generate_log(self) -> None:
+        """Generate a log file with caller info and chat history."""
+        logs_dir = Path(__file__).resolve().parent / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        caller = self.caller_phone or "unknown"
+        filename = f"{caller}-{date.today()}.txt"
+        filepath = logs_dir / filename
+
+        output = f"CALLER PHONE NO. = {caller}\n"
+        output += f"STATE: {self.state.name}\n\n"
+
+        # Staff info if available
+        staff = self.context.get('staff_info', {})
+        if staff:
+            output += "STAFF INFO:\n"
+            output += f"  Name: {staff.get('full_name', 'Unknown')}\n"
+            output += f"  ID: {staff.get('id', 'Unknown')}\n"
+            output += f"  Email: {staff.get('email', 'Unknown')}\n\n"
+
+        # Selected shift if any
+        selected = self.context.get('selected_shift')
+        if selected:
+            output += "CANCELLED SHIFT:\n"
+            output += f"  Client: {selected.get('client_name', 'Unknown')}\n"
+            output += f"  Date: {selected.get('date', 'Unknown')}\n"
+            output += f"  Time: {selected.get('time', 'Unknown')}\n\n"
+
+        # Full chat history
+        if self.chat_history:
+            output += "FULL CHAT HISTORY:\n"
+            output += "=" * 40 + "\n"
+            for msg in self.chat_history:
+                output += f"{msg['role'].upper()}: {msg['content']}\n"
+            output += "=" * 40 + "\n"
+        else:
+            output += "CHAT HISTORY: None recorded\n"
+
+        with open(filepath, "w") as f:
+            f.write(output)
+
+        self._log(f"Log saved to {filepath}")
 
 
 # =============================================================================

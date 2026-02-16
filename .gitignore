@@ -17,3 +17,7 @@ build/
 backend/odin/screening_agent/logs/*
 !backend/odin/screening_agent/logs/.gitkeep
 
+# Ignore log files in call_assistant logs folder, but keep the folder
+backend/thoth/core/call_assistant/logs/*
+!backend/thoth/core/call_assistant/logs/.gitkeep
+
