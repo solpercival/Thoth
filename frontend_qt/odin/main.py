@@ -2,6 +2,7 @@
 Simplest PyQt App - Text and a Button
 """
 
+import os
 import sys
 import subprocess
 from pathlib import Path
@@ -590,6 +591,11 @@ class MainWindow(QWidget):
 
         self.status = QLabel("Status: App stopped")
 
+        # Open Logs button
+        self.open_logs_button = QPushButton("Open Logs")
+        self.open_logs_button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
+        self.open_logs_button.clicked.connect(self._open_logs_folder)
+
         # The phone list widget
         self.phone_list = PhoneList()
 
@@ -606,6 +612,7 @@ class MainWindow(QWidget):
         layout.addSpacing(20)
         layout.addWidget(start_backend_label)
         layout.addWidget(self.button)
+        layout.addWidget(self.open_logs_button)
         layout.addSpacing(20)
         layout.addWidget(self.phone_list)
         layout.addSpacing(10)
@@ -668,6 +675,19 @@ class MainWindow(QWidget):
             self.is_backend_on = False
         
 
+
+    def _open_logs_folder(self) -> None:
+        """Open the screening agent logs folder in file explorer."""
+        project_root = Path(__file__).parent.parent.parent
+        logs_path = project_root / "backend" / "odin" / "screening_agent" / "logs"
+        logs_path.mkdir(parents=True, exist_ok=True)
+
+        if sys.platform == "win32":
+            os.startfile(str(logs_path))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(logs_path)])
+        else:
+            subprocess.Popen(["xdg-open", str(logs_path)])
 
     ###############################################################################
     # ACTION FUNCTIONS

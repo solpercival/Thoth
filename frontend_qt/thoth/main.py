@@ -2,6 +2,7 @@
 Simplest PyQt App - Text and a Button
 """
 
+import os
 import sys
 import subprocess
 from pathlib import Path
@@ -160,13 +161,18 @@ class MainWindow(QWidget):
         self.button.setObjectName("startButton")
 
         self.status = QLabel("Status: App stopped")
-        #self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Open Logs button
+        self.open_logs_button = QPushButton("Open Logs")
+        self.open_logs_button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
+        self.open_logs_button.clicked.connect(self._open_logs_folder)
 
         # Add widgets to layout
         layout.addWidget(title)
         layout.addWidget(app_banner)
         layout.addSpacing(40)
         layout.addWidget(self.button)
+        layout.addWidget(self.open_logs_button)
 
         self.autostart_widget = AutoStartWidget()
         layout.addWidget(self.autostart_widget)
@@ -274,6 +280,19 @@ class MainWindow(QWidget):
                 self.on_button_click()
 
 
+
+    def _open_logs_folder(self) -> None:
+        """Open the call assistant logs folder in file explorer."""
+        project_root = Path(__file__).parent.parent.parent
+        logs_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "logs"
+        logs_path.mkdir(parents=True, exist_ok=True)
+
+        if sys.platform == "win32":
+            os.startfile(str(logs_path))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(logs_path)])
+        else:
+            subprocess.Popen(["xdg-open", str(logs_path)])
 
     ###############################################################################
     # ACTION FUNCTIONS
