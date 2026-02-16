@@ -143,7 +143,7 @@ If the user wants to end the call:
 LOG_PREFIX = "[CALL_ASSISTANT_V5]"
 
 # Test mode configuration
-TEST_MODE = True
+TEST_MODE = False
 TEST_NUMBER = "0411 305 401"  # Replace with your test number
 
 
