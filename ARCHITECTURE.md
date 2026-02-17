@@ -199,6 +199,33 @@ When `<FETCH>` is triggered, the system runs a Playwright browser automation pip
 
 On `<SUBMIT>`, the system formats the shift data and sends a notification email to the rostering team (rather than making a direct API call to Ezaango).
 
+### Email Notification System
+
+Lives in `backend/thoth/core/email_agent/`. When the call assistant emits a `<SUBMIT>` tag, the system sends a cancellation notification email to the rostering team.
+
+**How it works:**
+
+1. `email_formatter.py` — `format_ezaango_shift_data()` takes the shift data dict (staff name/ID/email, shift client/date/time) and the cancellation reason, and builds a plain-text email body.
+2. `email_sender.py` — `send_notify_email()` sends the formatted email from the sender to the collector address using Python's `smtplib`.
+
+**Gmail App Password authentication:**
+
+The system uses Gmail's SMTP server with an **App Password** (not the account's regular password). App Passwords are 16-character codes generated from Google Account settings that bypass 2FA for SMTP access.
+
+- Connects to `smtp.gmail.com` on port `465` (direct SSL via `SMTP_SSL`)
+- Authenticates with the sender email + app password
+- Also supports port `587` (STARTTLS) for non-Gmail providers like Outlook
+
+**Environment variables:**
+
+| Variable | Purpose |
+|---|---|
+| `SENDER_EMAIL` | Gmail address used to send emails |
+| `EMAIL_APP_PASSWORD` | Gmail App Password (spaces are auto-stripped) |
+| `COLLECTOR_EMAIL` | Recipient address (the rostering team) |
+| `SMTP_SERVER` | SMTP host (default: `smtp.gmail.com`) |
+| `SMTP_PORT` | SMTP port (default: `465`) |
+
 ---
 
 ## Shared Clients
