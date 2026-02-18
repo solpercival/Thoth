@@ -35,6 +35,21 @@ from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extens
 
 
 # =============================================================================
+# TTS SCRIPTS - Pre-written messages spoken by the agent
+# =============================================================================
+
+class Scripts:
+    """Pre-written TTS scripts. Edit these to change what the agent says."""
+
+    GREETING = "Hello, thank you for calling Help at Hand Support. How can I help you today?"
+    GREETING_SHORT = "Hello, thank you for calling. How can I help you today?"
+    ERROR = "Sorry, I encountered an error. Let me start over. How can I help you?"
+    SHIFT_LOOKUP_ERROR = "Sorry, I had trouble looking up your shifts. Could you tell me the date again?"
+    SHIFT_NOT_FOUND = "Sorry, I couldn't identify that shift. Could you tell me which one again?"
+    CANCELLATION_ERROR = "Sorry, there was an error cancelling your shift. Please try again or contact support."
+
+
+# =============================================================================
 # STATES - Only 2 states, LLM handles everything within each state
 # =============================================================================
 
@@ -242,7 +257,7 @@ class CallAssistantV5:
 
         except Exception as e:
             self._log(f"ERROR: {e}")
-            self._speak("Sorry, I encountered an error. Let me start over. How can I help you?")
+            self._speak(Scripts.ERROR)
             self._reset_conversation()
 
         finally:
@@ -330,7 +345,7 @@ class CallAssistantV5:
 
             else:
                 # Error fetching shifts
-                error_msg = "Sorry, I had trouble looking up your shifts. Could you tell me the date again?"
+                error_msg = Scripts.SHIFT_LOOKUP_ERROR
                 self._add_to_history("assistant", error_msg)
                 self._speak(error_msg)
 
@@ -384,7 +399,7 @@ class CallAssistantV5:
 
             if not selected_shift:
                 # Couldn't find shift - ask LLM to clarify
-                error_msg = "Sorry, I couldn't identify that shift. Could you tell me which one again?"
+                error_msg = Scripts.SHIFT_NOT_FOUND
                 self._add_to_history("assistant", error_msg)
                 self._speak(error_msg)
                 return
@@ -411,7 +426,7 @@ class CallAssistantV5:
                     self._reset_conversation()
 
             else:
-                error_msg = "Sorry, there was an error cancelling your shift. Please try again or contact support."
+                error_msg = Scripts.CANCELLATION_ERROR
                 self._add_to_history("assistant", error_msg)
                 self._speak(error_msg)
                 self._reset_conversation()
@@ -665,7 +680,7 @@ class CallAssistantV5:
 
         try:
             # Initial greeting
-            greeting = "Hello, thank you for calling Help at Hand Support. How can I help you today?"
+            greeting = Scripts.GREETING
             self._speak(greeting)
             self._add_to_history("assistant", greeting)
 
@@ -693,7 +708,7 @@ class CallAssistantV5:
             )
 
             # Initial greeting
-            greeting = "Hello, thank you for calling. How can I help you today?"
+            greeting = Scripts.GREETING_SHORT
             self._speak(greeting)
             self._add_to_history("assistant", greeting)
 
