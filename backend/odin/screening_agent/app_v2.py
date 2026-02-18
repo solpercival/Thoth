@@ -356,10 +356,10 @@ if __name__ == "__main__":
         print("  GET  /session/<id> - Get specific session details")
         print("  GET  /health  - Health check")
         print(f"\nTEST_MODE: {TEST_MODE}")
-        print("\nServer running on http://localhost:5000\n")
+        print("\nServer running on http://localhost:5001\n")
         print("=" * 60 + "\n")
 
-        app.run(debug=True, port=5000, use_reloader=False)
+        app.run(debug=True, port=5001, use_reloader=False)
     except KeyboardInterrupt:
         print("\nShutting down gracefully...")
         # Stop all active sessions

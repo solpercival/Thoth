@@ -11,15 +11,6 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo --- Installing whisper dependencies ---
-python -m pip install -r backend\whisper_requirements.txt
-if %errorlevel% neq 0 (
-    echo ERROR: Failed to install whisper dependencies
-    pause
-    exit /b 1
-)
-
-echo.
 echo --- Installing frontend_qt dependencies ---
 python -m pip install -r frontend_qt\requirements.txt
 if %errorlevel% neq 0 (

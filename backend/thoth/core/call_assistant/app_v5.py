@@ -11,6 +11,12 @@ from threading import Thread, Event
 import time
 import os
 import uuid
+import logging
+
+# Suppress noisy library loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("faster_whisper").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extension, is_call_active
 from thoth.core.call_assistant.call_assistant_v5 import CallAssistantV5

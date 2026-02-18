@@ -89,7 +89,7 @@ class AutoDialControl(QWidget):
         """Tell the backend to stop the current session"""
         try:
             requests.post(
-                "http://localhost:5000/stop",
+                "http://localhost:5001/stop",
                 json={"session_id": self.current_session_id},
                 timeout=5
             )
@@ -124,7 +124,7 @@ class AutoDialControl(QWidget):
         # Call the phone number
         try:
             response = requests.post(
-                "http://localhost:5000/start",
+                "http://localhost:5001/start",
                 json={"caller_phone": phone_number},
                 timeout=10
             )
@@ -156,7 +156,7 @@ class AutoDialControl(QWidget):
             return
 
         try:
-            response = requests.get("http://localhost:5000/status", timeout=5)
+            response = requests.get("http://localhost:5001/status", timeout=5)
             data = response.json()
             sessions = data.get('sessions', [])
 
@@ -186,7 +186,7 @@ class AutoDialControl(QWidget):
             return
         try:
             response = requests.get(
-                f"http://localhost:5000/call-result/{self.current_session_id}",
+                f"http://localhost:5001/call-result/{self.current_session_id}",
                 timeout=5
             )
             if response.status_code == 200:
@@ -299,7 +299,7 @@ class PhoneList(QWidget):
             return
 
         try:
-            response = requests.get("http://localhost:5000/status", timeout=5)
+            response = requests.get("http://localhost:5001/status", timeout=5)
             data = response.json()
             sessions = data.get('sessions', [])
 
@@ -326,7 +326,7 @@ class PhoneList(QWidget):
             return
         try:
             response = requests.get(
-                f"http://localhost:5000/call-result/{self.current_session_id}",
+                f"http://localhost:5001/call-result/{self.current_session_id}",
                 timeout=5
             )
             if response.status_code == 200:
@@ -408,7 +408,7 @@ class PhoneList(QWidget):
             try:
                 # UI change telling that were processing the call function
                 response = requests.post(
-                    "http://localhost:5000/start",
+                    "http://localhost:5001/start",
                     json={"caller_phone": phone_number}
                 )
 
@@ -445,7 +445,7 @@ class PhoneList(QWidget):
             self.poll_timer.stop()
             try:
                 response = requests.post(
-                    "http://localhost:5000/stop",
+                    "http://localhost:5001/stop",
                     json={"session_id": self.current_session_id}
                 )
                 if response.status_code == 200:
@@ -775,7 +775,7 @@ class MainWindow(QWidget):
 
         # Try to ping the health endpoint
         try:
-            response = requests.get("http://localhost:5000/health", timeout=1)
+            response = requests.get("http://localhost:5001/health", timeout=1)
             if response.status_code == 200:
                 print(f"[FRONTEND QT] Backend started successfully in {elapsed_time:.2f}s")
                 self.health_check_timer.stop()
