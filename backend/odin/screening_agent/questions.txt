@@ -1,9 +1,10 @@
 # STICK TO THIS FORMAT EXACTLY. 1 question, 1 line
 # <Number>. <Question>
+# text after '#' will be ignored
 
 1. What is your full name
-# 2. Do you identify as a Aboriginal or Torres Strait Islanders?
-# 3. What is your nationality
+2. Do you identify as a Aboriginal or Torres Strait Islanders?
+3. What is your nationality
 
 
 

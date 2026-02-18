@@ -601,10 +601,14 @@ class MainWindow(QWidget):
 
         self.status = QLabel("Status: App stopped")
 
-        # Open Logs button
+        # Open Logs and Questions buttons
         self.open_logs_button = QPushButton("Open Logs")
         self.open_logs_button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
         self.open_logs_button.clicked.connect(self._open_logs_folder)
+
+        self.open_questions_button = QPushButton("Open Questions")
+        self.open_questions_button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
+        self.open_questions_button.clicked.connect(self._open_questions_file)
 
         # The phone list widget
         self.phone_list = PhoneList()
@@ -619,17 +623,20 @@ class MainWindow(QWidget):
         # Add widgets to layout
         layout.addWidget(title)
         layout.addWidget(app_banner)
-        layout.addSpacing(20)
+        layout.addSpacing(10)
         layout.addWidget(start_backend_label)
         layout.addWidget(self.button)
-        layout.addWidget(self.open_logs_button)
-        layout.addSpacing(20)
+        open_buttons_layout = QHBoxLayout()
+        open_buttons_layout.addWidget(self.open_logs_button)
+        open_buttons_layout.addWidget(self.open_questions_button)
+        layout.addLayout(open_buttons_layout)
+        layout.addSpacing(10)
         layout.addWidget(self.phone_list)
         layout.addSpacing(10)
         layout.addWidget(self.auto_dial)
         layout.addSpacing(10)
         layout.addWidget(self.failed_list)
-        layout.addSpacing(20)
+        layout.addSpacing(10)
 
         layout.addStretch()  # Flexible space instead of fixed, do this to prevent elements not being squished
         layout.addWidget(self.status)
@@ -649,6 +656,10 @@ class MainWindow(QWidget):
                 background-color: #28a745;
                 padding: 10px;
                 border-radius: 5px;
+            }
+            QListWidget {
+                background-color: #1a1a1a;
+                color: white;
             }
         """)
 
@@ -698,6 +709,18 @@ class MainWindow(QWidget):
             subprocess.Popen(["open", str(logs_path)])
         else:
             subprocess.Popen(["xdg-open", str(logs_path)])
+
+    def _open_questions_file(self) -> None:
+        """Open the questions.txt file in the default text editor."""
+        project_root = Path(__file__).parent.parent.parent
+        questions_path = project_root / "backend" / "odin" / "screening_agent" / "questions.txt"
+
+        if sys.platform == "win32":
+            os.startfile(str(questions_path))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(questions_path)])
+        else:
+            subprocess.Popen(["xdg-open", str(questions_path)])
 
     ###############################################################################
     # ACTION FUNCTIONS
