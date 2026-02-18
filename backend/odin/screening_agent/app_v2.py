@@ -17,7 +17,7 @@ import uuid
 import os
 
 from odin.screening_agent.screening_agent_v2 import ScreeningAgentV2
-from odin.screening_agent.call_3cx_client import make_call, poll_call_answered, drop_call, get_access_token
+from odin.screening_agent.call_3cx_client import make_call, poll_call_answered, drop_call, get_access_token, get_active_calls
 
 
 AGENT_START_DELAY = 2.0
@@ -102,7 +102,18 @@ def start_screening():
         # Actually call the phone number
         extension = os.getenv('EXTENSION', '0147')  # Your extension
         call_result = make_call(extension, caller_phone)
-    
+
+        if not call_result:
+            print(f"[APP_V2] make_call failed for {caller_phone} — skipping poll")
+            call_results[session_id] = {
+                'caller_phone': caller_phone,
+                'result': 'failed',
+                'call_status': 'make_call_failed',
+            }
+            if session_id in active_sessions:
+                del active_sessions[session_id]
+            return
+
         # Wait for users to pickup, only then create the screening agent (which auto starts)
         poll_result = poll_call_answered(extension, timeout=60, poll_interval=1.0)
         # User failed to pick up, store result and delete this session
@@ -131,10 +142,22 @@ def start_screening():
         
         try:
             agent.start()
+            call_check_counter = 0
             while agent._agent_thread and agent._agent_thread.is_alive():
                 if stop_event.is_set():
                     agent.stop()
                     break
+                # Check if the call is still active on 3CX every 5 seconds
+                call_check_counter += 1
+                if call_check_counter >= 10:  # 10 * 0.5s = 5s
+                    call_check_counter = 0
+                    token = get_access_token()
+                    if token:
+                        participants = get_active_calls(extension, token)
+                        if not participants:
+                            print(f"[APP_V2] Call dropped by remote party — stopping agent")
+                            agent.stop()
+                            break
                 time.sleep(0.5)
         except Exception as e:
             print(f"[APP_V2] ERROR: {e}")
@@ -155,9 +178,12 @@ def start_screening():
             # Store result for frontend to query
             if stop_event.is_set():
                 result = 'stopped'
+            elif agent and agent.callback_time:
+                result = 'callback'
+                print(f"[APP_V2] Agent finished — user busy, callback: {agent.callback_time}")
             elif agent and len(agent.answers) == 0:
                 result = 'no_answer'  # Likely voicemail — agent ended without getting any answers
-                print(f"[APP_V2] Agent finished with 0 answers — likely voicemail")
+                print(f"[APP_V2] Agent finished with 0 answers")
             else:
                 result = 'completed'
             call_results[session_id] = {

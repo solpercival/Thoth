@@ -25,7 +25,7 @@ from datetime import date
 from enum import Enum, auto
 from typing import Optional, Dict, Any, List
 
-from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
+from whisper_client.system_audio_whisper_fast_client import SystemAudioWhisperFastClient
 from ollama_client.llm_client import OllamaClient
 from tts_client.tts_client import TTSClient
 from thoth.core.email_agent.email_formatter import format_ezaango_shift_data
@@ -188,7 +188,7 @@ class CallAssistantV5:
         )
 
         # Audio clients
-        self.whisper_client: SystemAudioWhisperClient = None
+        self.whisper_client: SystemAudioWhisperFastClient = None
         self.stop_event: Event = None
 
         # State machine - only 2 states!
@@ -658,7 +658,7 @@ class CallAssistantV5:
         """Start the assistant (standalone mode)."""
         self.stop_event = Event()
 
-        self.whisper_client = SystemAudioWhisperClient(
+        self.whisper_client = SystemAudioWhisperFastClient(
             model="base",
             phrase_timeout=5,
             on_phrase_complete=self.on_phrase_complete
@@ -687,7 +687,7 @@ class CallAssistantV5:
         self.stop_event = stop_event
 
         try:
-            self.whisper_client = SystemAudioWhisperClient(
+            self.whisper_client = SystemAudioWhisperFastClient(
                 model="base",
                 phrase_timeout=5,
                 on_phrase_complete=self.on_phrase_complete
@@ -733,7 +733,8 @@ class CallAssistantV5:
         logs_dir.mkdir(parents=True, exist_ok=True)
 
         caller = self.caller_phone or "unknown"
-        filename = f"{caller}-{date.today()}.txt"
+        from datetime import datetime
+        filename = f"{caller}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
         filepath = logs_dir / filename
 
         output = f"CALLER PHONE NO. = {caller}\n"

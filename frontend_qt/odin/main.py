@@ -177,7 +177,7 @@ class AutoDialControl(QWidget):
                 self._schedule_next_call()
 
 
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             pass
 
     def _check_call_result(self) -> None:
@@ -198,7 +198,7 @@ class AutoDialControl(QWidget):
                         self.failed_list.add_number(self.current_phone_number)
                 else:
                     print(f"[AUTO-DIAL] Call result: {result}")
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             pass
 
     def _schedule_next_call(self) -> None:
@@ -317,7 +317,7 @@ class PhoneList(QWidget):
                 self.current_phone_number = None
                 self.reset_button()
 
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             pass
 
     def _check_call_result(self) -> None:
@@ -338,7 +338,7 @@ class PhoneList(QWidget):
                         self.failed_list.add_number(self.current_phone_number)
                 else:
                     print(f"[FRONTEND] Call result: {result}")
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             pass
 
     def take_top_number(self) -> str:
@@ -492,17 +492,22 @@ class FailedCallsList(QWidget):
         retry_all_button.setStyleSheet("background-color: #ffc107; color: black;")
         retry_all_button.pressed.connect(self._retry_all)
 
-        clear_button = QPushButton("Clear")
-        clear_button.setStyleSheet("background-color: #dc3545;")
+        delete_button = QPushButton("Delete")
+        delete_button.setStyleSheet("background-color: #ff2400;")
+        delete_button.pressed.connect(self._delete_selected)
+
+        clear_button = QPushButton("Clear All")
+        clear_button.setStyleSheet("background-color: #ff2400;")
         clear_button.pressed.connect(self._clear_all)
 
         buttons_layout.addWidget(retry_button)
         buttons_layout.addWidget(retry_all_button)
-        buttons_layout.addWidget(clear_button)
+        buttons_layout.addWidget(delete_button)
 
         layout.addWidget(title)
         layout.addWidget(self.list_widget)
         layout.addLayout(buttons_layout)
+        layout.addWidget(clear_button)
 
         self._load_list()
 
@@ -521,6 +526,11 @@ class FailedCallsList(QWidget):
         while self.list_widget.count() > 0:
             item = self.list_widget.takeItem(0)
             self.phone_list.list_widget.addItem(item.text())
+
+    def _delete_selected(self) -> None:
+        current_item = self.list_widget.currentItem()
+        if current_item:
+            self.list_widget.takeItem(self.list_widget.row(current_item))
 
     def _clear_all(self) -> None:
         self.list_widget.clear()

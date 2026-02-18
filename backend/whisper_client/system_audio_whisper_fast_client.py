@@ -2,6 +2,17 @@ import argparse
 import os
 import warnings
 
+# Add NVIDIA CUDA DLL paths so CTranslate2 can find cublas/cudnn
+for _nvidia_pkg in ('cublas', 'cudnn'):
+    try:
+        _pkg = __import__(f'nvidia.{_nvidia_pkg}', fromlist=[''])
+        for _p in _pkg.__path__:
+            _bin = os.path.join(_p, 'bin')
+            if os.path.isdir(_bin) and _bin not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = _bin + os.pathsep + os.environ.get('PATH', '')
+    except ImportError:
+        pass
+
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -71,8 +82,8 @@ class SystemAudioWhisperFastClient:
     client.stop() - stop transcribing
     """
     def __init__(self, model="small", non_english=False, energy_threshold=1000,
-                 record_timeout=0.1, phrase_timeout=1, on_phrase_complete=None,
-                 silence_threshold=0.01, max_phrase_duration=15,
+                 record_timeout=0.1, phrase_timeout=0.5, on_phrase_complete=None,
+                 silence_threshold=0.05, max_phrase_duration=15,
                  # Whisper accuracy parameters
                  language="en", temperature=0.0, initial_prompt=None,
                  condition_on_previous_text=True, no_speech_threshold=0.6,
@@ -262,9 +273,14 @@ class SystemAudioWhisperFastClient:
         if self.model_name != "large" and self.model_name != "large-v2" and self.model_name != "large-v3" and not self.non_english:
             model = model + ".en"
 
-        # Determine device
+        # Determine device — check CTranslate2 CUDA support first, fall back to torch check
         if self.device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            try:
+                import ctranslate2
+                ctranslate2.get_supported_compute_types("cuda")
+                device = "cuda"
+            except Exception:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             device = self.device
 

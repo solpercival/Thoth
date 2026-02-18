@@ -41,7 +41,7 @@ def get_active_calls(extension:str, access_token:str):
     headers = {"Authorization": f"Bearer {access_token}"}
     
     response = requests.get(url, headers=headers, verify=False)
-    
+
     if response.status_code == 200:
         return response.json()
     return []

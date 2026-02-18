@@ -406,8 +406,12 @@ class ScreeningAgentV2:
             self.callback_time = parsed['data']
             if self.callback_time:
                 self.call_status = f"Unavailable - Callback: {self.callback_time}"
+                goodbye = f"Got it, we'll call you back {self.callback_time}. Thanks for your time, goodbye!"
             else:
                 self.call_status = "Unavailable - No callback provided"
+                goodbye = "No worries, we'll try again another time. Thanks, goodbye!"
+            self._add_to_history("assistant", goodbye)
+            self._speak(goodbye)
             self._log(f"User not available. Callback time: {self.callback_time}")
             return False
 
@@ -623,7 +627,8 @@ class ScreeningAgentV2:
         # Ensure logs directory exists
         self.LOGS_FILE_PATH.mkdir(parents=True, exist_ok=True)
 
-        filename = f"{self.caller_number}-{date.today()}.txt"
+        from datetime import datetime
+        filename = f"{self.caller_number}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
         filepath = self.LOGS_FILE_PATH / filename
 
         output = f"CALLER PHONE NO. = {self.caller_number}\n"
