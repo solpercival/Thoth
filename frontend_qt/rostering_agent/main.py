@@ -284,7 +284,7 @@ class MainWindow(QWidget):
     def _open_logs_folder(self) -> None:
         """Open the call assistant logs folder in file explorer."""
         project_root = Path(__file__).parent.parent.parent
-        logs_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "logs"
+        logs_path = project_root / "backend" / "rostering_agent" / "core" / "call_assistant" / "logs"
         logs_path.mkdir(parents=True, exist_ok=True)
 
         if sys.platform == "win32":
@@ -300,7 +300,7 @@ class MainWindow(QWidget):
     def _start_backend(self):
         # Get the path to app_v3.py
         project_root = Path(__file__).parent.parent.parent  # thoth -> frontend_qt -> Thoth
-        script_path = project_root / "backend" / "thoth" / "core" / "call_assistant" / "app_v5.py"
+        script_path = project_root / "backend" / "rostering_agent" / "core" / "call_assistant" / "app_v5.py"
 
         # Get python from venv
         if sys.platform == "win32":

@@ -16,8 +16,8 @@ import time
 import uuid
 import os
 
-from odin.screening_agent.screening_agent_v2 import ScreeningAgentV2
-from odin.screening_agent.call_3cx_client import make_call, poll_call_answered, drop_call, get_access_token, get_active_calls
+from screening_agent.screening_agent.screening_agent_v2 import ScreeningAgentV2
+from screening_agent.screening_agent.call_3cx_client import make_call, poll_call_answered, drop_call, get_access_token, get_active_calls
 
 
 AGENT_START_DELAY = 2.0

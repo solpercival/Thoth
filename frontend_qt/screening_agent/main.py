@@ -704,7 +704,7 @@ class MainWindow(QWidget):
     def _open_logs_folder(self) -> None:
         """Open the screening agent logs folder in file explorer."""
         project_root = Path(__file__).parent.parent.parent
-        logs_path = project_root / "backend" / "odin" / "screening_agent" / "logs"
+        logs_path = project_root / "backend" / "screening_agent" / "screening_agent" / "logs"
         logs_path.mkdir(parents=True, exist_ok=True)
 
         if sys.platform == "win32":
@@ -717,7 +717,7 @@ class MainWindow(QWidget):
     def _open_questions_file(self) -> None:
         """Open the questions.txt file in the default text editor."""
         project_root = Path(__file__).parent.parent.parent
-        questions_path = project_root / "backend" / "odin" / "screening_agent" / "questions.txt"
+        questions_path = project_root / "backend" / "screening_agent" / "screening_agent" / "questions.txt"
 
         if sys.platform == "win32":
             os.startfile(str(questions_path))
@@ -732,7 +732,7 @@ class MainWindow(QWidget):
     def _start_backend(self):
         # Get the path to odin app.py
         project_root = Path(__file__).parent.parent.parent  # odin -> frontend_qt -> Thoth
-        script_path = project_root / "backend" / "odin" / "screening_agent" / "app_v2.py"
+        script_path = project_root / "backend" / "screening_agent" / "screening_agent" / "app_v2.py"
 
         # Get python from venv
         if sys.platform == "win32":

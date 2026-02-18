@@ -70,7 +70,7 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, BrowserContext, Page, expect
 
-from thoth.automation.secrets import get_admin_totp_code
+from rostering_agent.automation.secrets import get_admin_totp_code
 
 # Configure logging
 logging.basicConfig(

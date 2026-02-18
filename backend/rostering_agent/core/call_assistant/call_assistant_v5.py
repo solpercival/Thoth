@@ -28,10 +28,10 @@ from typing import Optional, Dict, Any, List
 from whisper_client.system_audio_whisper_fast_client import SystemAudioWhisperFastClient
 from ollama_client.llm_client import OllamaClient
 from tts_client.tts_client import TTSClient
-from thoth.core.email_agent.email_formatter import format_ezaango_shift_data
-from thoth.core.email_agent.email_sender import send_notify_email
-from thoth.automation.test_integrated_workflow import test_integrated_workflow
-from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extension
+from rostering_agent.core.email_agent.email_formatter import format_ezaango_shift_data
+from rostering_agent.core.email_agent.email_sender import send_notify_email
+from rostering_agent.automation.test_integrated_workflow import test_integrated_workflow
+from rostering_agent.core.call_assistant.call_3cx_client import close_all_calls_for_extension
 
 
 # =============================================================================

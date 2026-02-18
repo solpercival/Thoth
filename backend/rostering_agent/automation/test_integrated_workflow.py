@@ -56,11 +56,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Try both relative and absolute imports
 try:
-    from thoth.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name, search_staff_shifts_by_date
-    from thoth.automation.login_playwright import LoginAutomation
-    from thoth.automation.website_configs_playwright import get_config
-    from thoth.automation.secrets import get_admin_credentials, get_admin_totp_code
-    from thoth.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
+    from rostering_agent.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name, search_staff_shifts_by_date
+    from rostering_agent.automation.login_playwright import LoginAutomation
+    from rostering_agent.automation.website_configs_playwright import get_config
+    from rostering_agent.automation.secrets import get_admin_credentials, get_admin_totp_code
+    from rostering_agent.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 except ModuleNotFoundError:
     from staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name, search_staff_shifts_by_date
     from login_playwright import LoginAutomation

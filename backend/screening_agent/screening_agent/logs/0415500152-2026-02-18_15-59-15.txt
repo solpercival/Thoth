@@ -1,0 +1,27 @@
+CALLER PHONE NO. = 0415500152
+CALLER ID = call_046b25e5
+
+STATUS: Completed - All questions answered
+
+ANSWERS:
+----------------------------------------
+1. What is your full name?
+   Answer: User's full name is John Stevens.
+
+2. Do you identify as a Aboriginal or Torres Strait Islanders?
+   Answer: User identified as not Aboriginal or Torres Strait Islander.
+
+3. What is your nationality
+   Answer: User's nationality is Australian.
+
+
+FULL CHAT HISTORY:
+========================================
+ASSISTANT: Thank you for that detail.
+ASSISTANT: Do you identify as a Aboriginal or Torres Strait Islanders?
+USER: Um, no, I don't.
+ASSISTANT: Thank you for that detail.
+ASSISTANT: What is your nationality
+USER: Australian
+ASSISTANT: Thank you for that detail.
+========================================

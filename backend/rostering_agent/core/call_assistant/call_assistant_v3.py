@@ -17,11 +17,11 @@ from typing import Optional, Dict, Any
 from whisper_client.system_audio_whisper_client import SystemAudioWhisperClient
 from ollama_client.llm_client import OllamaClient
 from tts_client.tts_client import TTSClient
-from thoth.core.email_agent.email_formatter import format_ezaango_shift_data
-from thoth.core.email_agent.email_sender import send_notify_email
-from thoth.automation.test_integrated_workflow import test_integrated_workflow
+from rostering_agent.core.email_agent.email_formatter import format_ezaango_shift_data
+from rostering_agent.core.email_agent.email_sender import send_notify_email
+from rostering_agent.automation.test_integrated_workflow import test_integrated_workflow
 
-from thoth.core.call_assistant.call_3cx_client import *
+from rostering_agent.core.call_assistant.call_3cx_client import *
 
 
 SYSTEM_PROMPT = """You are a call center agent handling shift queries and cancellations.

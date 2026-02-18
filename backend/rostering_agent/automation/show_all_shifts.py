@@ -1,9 +1,9 @@
 """Check what shifts actually exist for the staff"""
 import asyncio
 
-from thoth.automation.login_playwright import LoginAutomation
-from thoth.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
-from thoth.automation.secrets import get_admin_creds
+from rostering_agent.automation.login_playwright import LoginAutomation
+from rostering_agent.automation.staff_lookup import lookup_staff_by_phone, search_staff_shifts_by_name
+from rostering_agent.automation.secrets import get_admin_creds
 
 async def main():
     login = LoginAutomation(use_saved_session=False)

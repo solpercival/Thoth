@@ -14,7 +14,7 @@ from threading import Thread
 import time
 import uuid
 
-from odin.screening_agent.screening_agent import ScreeningAgent
+from screening_agent.screening_agent.screening_agent import ScreeningAgent
 
 # For testing
 TEST_MODE = False  # Set to true to use test phone number (as the caller number)

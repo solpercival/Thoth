@@ -10,7 +10,7 @@ sys.path.insert(0, str(backend_root))
 
 from flask import Flask, request, jsonify
 from threading import Thread, Event
-from thoth.core.call_assistant.call_assistant import CallAssistant
+from rostering_agent.core.call_assistant.call_assistant import CallAssistant
 import time
 import os
 

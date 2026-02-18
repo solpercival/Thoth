@@ -26,7 +26,7 @@ backend_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(backend_root))
 
 from ollama_client.llm_client import OllamaClient
-from thoth.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
+from rostering_agent.core.call_assistant.shift_date_reasoner import ShiftDateReasoner
 
 
 def diagnose():

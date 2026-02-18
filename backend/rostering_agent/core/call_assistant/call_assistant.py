@@ -15,9 +15,9 @@ from ollama_client.llm_client import OllamaClient
 from typing import Optional, Any
 
 from tts_client.tts_client import TTSClient
-from thoth.core.email_agent.email_formatter import *
-from thoth.core.email_agent.email_sender import *
-from thoth.automation.test_integrated_workflow import test_integrated_workflow
+from rostering_agent.core.email_agent.email_formatter import *
+from rostering_agent.core.email_agent.email_sender import *
+from rostering_agent.automation.test_integrated_workflow import test_integrated_workflow
 
 
 def print_dict(data: Any, title: str = None) -> None:

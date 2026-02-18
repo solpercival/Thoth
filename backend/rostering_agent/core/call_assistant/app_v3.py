@@ -11,15 +11,9 @@ from threading import Thread, Event
 import time
 import os
 import uuid
-import logging
 
-# Suppress noisy library loggers
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("faster_whisper").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-from thoth.core.call_assistant.call_3cx_client import close_all_calls_for_extension, is_call_active
-from thoth.core.call_assistant.call_assistant_v5 import CallAssistantV5
+from rostering_agent.core.call_assistant.call_3cx_client import close_all_calls_for_extension, is_call_active
+from rostering_agent.core.call_assistant.call_assistant_v3 import CallAssistantV3
 
 ESTABLISH_DELAY = 1.0  # Delay before the greeting is played and the transcriber is activated
 EXTENSION = os.getenv('USED_EXTENSION')  # Extension of target number
@@ -78,7 +72,7 @@ def call_started():
 
     # Create and start assistant
     print("APP.PY: Creating agent")
-    assistant = CallAssistantV5(caller_phone=caller_phone, extension=EXTENSION)
+    assistant = CallAssistantV3(caller_phone=caller_phone, extension=EXTENSION)
     stop_event = Event()
 
     def run_assistant():
@@ -116,7 +110,7 @@ def call_started():
         'thread': thread,
         'stop_event': stop_event,
         'started_at': time.time(),
-        'version': 'v5',
+        'version': 'v3',
         'caller_phone': caller_phone
     }
 
@@ -175,7 +169,7 @@ if __name__ == '__main__':
     # Add shutdown handler
     try:
         print("=" * 60)
-        print("Starting Flask app with CallAssistantV5")
+        print("Starting Flask app with CallAssistantV3")
         print("=" * 60)
         print("\nEndpoints:")
         print("  GET/POST /webhook/call-started - Start a call session")
