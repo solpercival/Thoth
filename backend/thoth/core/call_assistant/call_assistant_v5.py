@@ -155,27 +155,15 @@ If the user wants to end the call:
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-
 LOG_PREFIX = "[CALL_ASSISTANT_V5]"
 
 # Test mode configuration
 TEST_MODE = False
 TEST_NUMBER = "0411 305 401"  # Replace with your test number
 
-
-# =============================================================================
-# TEST MODE CONFIGURATION
-# =============================================================================
-
-TEST_MODE = True  # Set to True to use test phone number instead of real caller
-TEST_NUMBER = "0433622442"  # Phone number to use when TEST_MODE is True
-
-
 # =============================================================================
 # MAIN CLASS
 # =============================================================================
-
-
 class CallAssistantV5:
     """
     LLM-driven voice assistant with simplified 2-state machine.

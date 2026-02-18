@@ -80,7 +80,8 @@ class Scripts:
     """Pre-written TTS scripts. Edit these to change what the agent says."""
 
     # Opening message - asks about availability
-    INTRO = "Hello this is Help at Hands Calling! Do you have a moment for a few quick questions?"
+    INTRO = "Hello this is Help at Hands Support Calling! Do you have a moment for a few quick questions?"
+    
 
     # Closing message - when all questions are answered
     OUTRO = "That was all the questions I wanted to ask you. Thank you for your time. We'll be in touch soon. Good day."
