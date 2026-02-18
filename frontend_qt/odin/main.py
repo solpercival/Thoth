@@ -661,6 +661,10 @@ class MainWindow(QWidget):
                 background-color: #1a1a1a;
                 color: white;
             }
+            QListWidget::item:selected {
+                background-color: #0d6efd;
+                color: white;
+            }
         """)
 
         ###############################################################################

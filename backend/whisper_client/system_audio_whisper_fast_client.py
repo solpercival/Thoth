@@ -82,8 +82,8 @@ class SystemAudioWhisperFastClient:
     client.stop() - stop transcribing
     """
     def __init__(self, model="small", non_english=False, energy_threshold=1000,
-                 record_timeout=0.1, phrase_timeout=0.5, on_phrase_complete=None,
-                 silence_threshold=0.05, max_phrase_duration=15,
+                 record_timeout=0.1, phrase_timeout=2, on_phrase_complete=None,
+                 silence_threshold=0.01, max_phrase_duration=15,
                  # Whisper accuracy parameters
                  language="en", temperature=0.0, initial_prompt=None,
                  condition_on_previous_text=True, no_speech_threshold=0.6,
