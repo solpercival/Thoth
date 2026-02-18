@@ -660,7 +660,6 @@ class CallAssistantV5:
 
         self.whisper_client = SystemAudioWhisperFastClient(
             model="base",
-            phrase_timeout=5,
             on_phrase_complete=self.on_phrase_complete
         )
 
