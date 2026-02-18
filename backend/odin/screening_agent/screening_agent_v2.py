@@ -83,7 +83,7 @@ class Scripts:
     INTRO = "Hello this is Help at Hands Calling! Do you have a moment for a few quick questions?"
 
     # Closing message - when all questions are answered
-    OUTRO = "That concludes all the questions. Thank you for your time. I've recorded all your questions. Good day."
+    OUTRO = "That was all the questions I wanted to ask you. Thank you for your time. We'll be in touch soon. Good day."
 
     # When no questions are loaded
     NO_QUESTIONS = "I don't have any questions to ask. Thank you for your time."
