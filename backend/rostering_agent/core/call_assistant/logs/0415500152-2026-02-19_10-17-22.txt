@@ -1,0 +1,9 @@
+CALLER PHONE NO. = 0415500152
+STATE: GATHERING_INFO
+
+FULL CHAT HISTORY:
+========================================
+ASSISTANT: Hello, thank you for calling. How can I help you today?
+USER: Let's change my mind. Bye-bye.
+ASSISTANT: Thank you for calling. If you change your mind or need any assistance in the future, feel free to reach out. Have a great day!
+========================================

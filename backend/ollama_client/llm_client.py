@@ -1,10 +1,14 @@
+import os
 import ollama
+from dotenv import load_dotenv
 
+load_dotenv()
+_THINKING_DEFAULT = os.getenv("THINKING", "True").strip().lower() == "true"
 
 # Input a prompt into the llm, default model is the lightest one. Returns the llm response
 class OllamaClient:
 
-    def __init__(self, model: str = 'qwen3:8b', system_prompt: str = None, enable_thinking: bool = True):
+    def __init__(self, model: str = 'qwen3:8b', system_prompt: str = None, enable_thinking: bool = _THINKING_DEFAULT):
         self.model_name = model
         self.messages = []
         self.enable_thinking = enable_thinking
