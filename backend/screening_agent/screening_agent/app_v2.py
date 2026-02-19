@@ -100,7 +100,7 @@ def start_screening():
     # NOTE: We make it into a function here so that we can run it on a seperate thread
     def poll_and_start_agent():
         # Actually call the phone number
-        extension = os.getenv('EXTENSION', '0147')  # Your extension
+        extension = os.getenv('USED_EXTENSION', '0147')  # Your extension
         call_result = make_call(extension, caller_phone)
 
         if not call_result:
@@ -245,7 +245,7 @@ def stop_screening():
         session_to_end['agent'].stop()
 
     # Hang up the call
-    extension = session_to_end.get('extension', os.getenv('EXTENSION', '0147'))
+    extension = session_to_end.get('extension', os.getenv('USED_EXTENSION', '0147'))
     participant = session_to_end.get('participant')
     if participant:
         token = get_access_token()
