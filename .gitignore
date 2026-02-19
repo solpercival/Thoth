@@ -14,10 +14,10 @@ build/
 .DS_Store
 
 # Ignore log files in screening_agent logs folder, but keep the folder
-backend/odin/screening_agent/logs/*
-!backend/odin/screening_agent/logs/.gitkeep
+backend/screening_agent/screening_agent/logs/*
+!backend/screening_agent/screening_agent/logs/.gitkeep
 
 # Ignore log files in call_assistant logs folder, but keep the folder
-backend/thoth/core/call_assistant/logs/*
-!backend/thoth/core/call_assistant/logs/.gitkeep
+backend/rostering_agent/core/call_assistant/logs/*
+!backend/rostering_agent/core/call_assistant/logs/.gitkeep
 

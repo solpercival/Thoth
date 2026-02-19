@@ -15,7 +15,7 @@ smtp_server: str = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 smtp_port: int = int(os.getenv("SMTP_PORT", "465"))
 
 
-def send_email(sender_address: str, recipient_address: list[str], subject: str = None, content: str = "", is_html: bool = False) -> None:
+def send_email(sender_address: str, recipient_address: list[str], subject: str = None, content: str = "", is_html: bool = False) -> bool:
     """
     Default email send function using SMTP
 
@@ -60,13 +60,14 @@ def send_email(sender_address: str, recipient_address: list[str], subject: str =
         print("="*10 + "EMAIL SENT" + "="*10)
         print(f"Sender: {sender_address}\nRecipient: {recipient_address}\nSubject: {subject}")
         print('=' * (22 + len("EMAIL SENT")))
+        return True
     except Exception as e:
-        print(f"Failed to send email: {str(e)}")
-        raise
+        print(f"[EMAIL] Failed to send email: {str(e)}")
+        return False
 
 
 
-def send_notify_email(content:str="", custom_subject:str="NOTIFICATION") -> None:
+def send_notify_email(content:str="", custom_subject:str="NOTIFICATION") -> bool:
     """
     Sends a notification email to the collector email adress
     
@@ -76,5 +77,5 @@ def send_notify_email(content:str="", custom_subject:str="NOTIFICATION") -> None
     :type custom_subject: str
     """
 
-    send_email(sender_email, [collector_email], custom_subject, content)
+    return send_email(sender_email, [collector_email], custom_subject, content)
 

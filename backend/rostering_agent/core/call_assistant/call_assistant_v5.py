@@ -158,7 +158,7 @@ If the user wants to end the call:
 LOG_PREFIX = "[CALL_ASSISTANT_V5]"
 
 # Test mode configuration
-TEST_MODE = True
+TEST_MODE = False
 TEST_NUMBER = "0410766642"  # Replace with your test number
 
 # =============================================================================
@@ -209,6 +209,7 @@ class CallAssistantV5:
 
         # For logging/debugging
         self.transcript_log = []
+        self.email_sent = None  # None = not attempted, True = sent, False = failed
 
     # =========================================================================
     # MAIN ENTRY POINT
@@ -398,20 +399,11 @@ class CallAssistantV5:
             success = self._submit_cancellation(selected_shift, reason)
 
             if success:
-                # Tell LLM cancellation was successful
-                system_msg = f"SYSTEM: Cancellation successful. Shift at {selected_shift.get('client_name')} on {selected_shift.get('date')} has been cancelled. Tell the user and ask if there's anything else."
-                self._add_to_history("system", system_msg)
-
-                success_response = self._ask_llm(system_msg)
-                parsed_success = self._parse_llm_response(success_response)
-
-                if parsed_success['text']:
-                    self._add_to_history("assistant", parsed_success['text'])
-                    self._speak(parsed_success['text'])
-
-                # Handle DONE command if LLM outputs it
-                if parsed_success['command'] == 'DONE':
-                    self._reset_conversation()
+                # Use the text the LLM already generated alongside the SUBMIT tag —
+                # no need for a second LLM call, it already asked "Is there anything else?"
+                if parsed['text']:
+                    self._add_to_history("assistant", parsed['text'])
+                    self._speak(parsed['text'])
 
             else:
                 error_msg = Scripts.CANCELLATION_ERROR
@@ -448,9 +440,12 @@ class CallAssistantV5:
             formatted_content = format_ezaango_shift_data(email_data, cancellation_reason=reason)
 
             # Send the email:
-            send_notify_email(content=formatted_content, custom_subject="SHIFT CANCELLATION REQUEST")
+            self.email_sent = send_notify_email(content=formatted_content, custom_subject="SHIFT CANCELLATION REQUEST")
 
-            self._log(f"Cancellation submitted for shift at {shift.get('client_name')} - Reason: {reason}")
+            if self.email_sent:
+                self._log(f"Cancellation submitted for shift at {shift.get('client_name')} - Reason: {reason}")
+            else:
+                self._log(f"Cancellation processed but notification email failed to send for shift at {shift.get('client_name')}")
             return True
 
         except Exception as e:
@@ -740,7 +735,14 @@ class CallAssistantV5:
         filepath = logs_dir / filename
 
         output = f"CALLER PHONE NO. = {caller}\n"
-        output += f"STATE: {self.state.name}\n\n"
+        output += f"STATE: {self.state.name}\n"
+        if self.email_sent is None:
+            output += "NOTIFICATION EMAIL: Not attempted\n"
+        elif self.email_sent:
+            output += "NOTIFICATION EMAIL: Sent successfully\n"
+        else:
+            output += "NOTIFICATION EMAIL: FAILED TO SEND - coordinator was not notified via email\n"
+        output += "\n"
 
         # Staff info if available
         staff = self.context.get('staff_info', {})
@@ -758,11 +760,11 @@ class CallAssistantV5:
             output += f"  Date: {selected.get('date', 'Unknown')}\n"
             output += f"  Time: {selected.get('time', 'Unknown')}\n\n"
 
-        # Full chat history
-        if self.chat_history:
+        # Full call transcript (uses transcript_log which is never cleared between resets)
+        if self.transcript_log:
             output += "FULL CHAT HISTORY:\n"
             output += "=" * 40 + "\n"
-            for msg in self.chat_history:
+            for msg in self.transcript_log:
                 output += f"{msg['role'].upper()}: {msg['content']}\n"
             output += "=" * 40 + "\n"
         else:

@@ -224,6 +224,7 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             
             if not all_shifts:
                 print(f"[!] No shifts found for {staff['full_name']}")
+                await asyncio.sleep(0.3)
                 return {
                     'staff': staff,
                     'dates': date_info,
@@ -266,6 +267,9 @@ async def test_integrated_workflow(phone_number: str, transcript: str):
             print(f"[OK] Shifts in Date Range: {len(filtered_shifts)}")
             print("="*70)
             
+            # Brief pause to allow Playwright subprocess pipes to close cleanly
+            await asyncio.sleep(0.3)
+
             return {
                 'staff': staff,
                 'dates': date_info,
