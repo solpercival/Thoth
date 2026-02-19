@@ -1,9 +1,0 @@
-CALLER PHONE NO. = 0433622442
-STATE: GATHERING_INFO
-
-FULL CHAT HISTORY:
-========================================
-ASSISTANT: Hello, thank you for calling. How can I help you today?
-USER: Oops, sorry, I changed my mind. Goodbye.
-ASSISTANT: Thank you for calling. Have a great day!
-========================================

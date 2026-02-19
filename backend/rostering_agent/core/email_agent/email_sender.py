@@ -58,7 +58,7 @@ def send_email(sender_address: str, recipient_address: list[str], subject: str =
                 server.send_message(msg)
 
         print("="*10 + "EMAIL SENT" + "="*10)
-        print(f"Sender: {sender_address}\nRecipient: {recipient_address}\nSubject: {subject}\nContent: {content}")
+        print(f"Sender: {sender_address}\nRecipient: {recipient_address}\nSubject: {subject}")
         print('=' * (22 + len("EMAIL SENT")))
     except Exception as e:
         print(f"Failed to send email: {str(e)}")

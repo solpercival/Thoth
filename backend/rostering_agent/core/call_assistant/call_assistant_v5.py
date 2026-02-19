@@ -158,8 +158,8 @@ If the user wants to end the call:
 LOG_PREFIX = "[CALL_ASSISTANT_V5]"
 
 # Test mode configuration
-TEST_MODE = False
-TEST_NUMBER = "0411 305 401"  # Replace with your test number
+TEST_MODE = True
+TEST_NUMBER = "0410766642"  # Replace with your test number
 
 # =============================================================================
 # MAIN CLASS
@@ -447,8 +447,8 @@ class CallAssistantV5:
 
             formatted_content = format_ezaango_shift_data(email_data, cancellation_reason=reason)
 
-            # Uncomment to actually send email:
-            # send_notify_email(content=formatted_content, custom_subject="SHIFT CANCELLATION REQUEST")
+            # Send the email:
+            send_notify_email(content=formatted_content, custom_subject="SHIFT CANCELLATION REQUEST")
 
             self._log(f"Cancellation submitted for shift at {shift.get('client_name')} - Reason: {reason}")
             return True
