@@ -224,8 +224,11 @@ class ScreeningAgentV2:
         # State machine
         self.state: State = State.AVAILABILITY
 
-        # Chat history for LLM context
+        # Chat history for LLM context (trimmed per question for efficiency)
         self.chat_history: List[Dict[str, str]] = []
+
+        # Full chat history for logging (never trimmed)
+        self.full_chat_history: List[Dict[str, str]] = []
 
         # Threading controls
         self._stop_requested = threading.Event()
@@ -273,6 +276,7 @@ class ScreeningAgentV2:
     def _add_to_history(self, role: str, content: str) -> None:
         """Add a message to chat history."""
         self.chat_history.append({"role": role, "content": content})
+        self.full_chat_history.append({"role": role, "content": content})
 
     def _format_chat_history(self) -> str:
         """Format chat history for the system prompt."""
@@ -656,11 +660,11 @@ class ScreeningAgentV2:
             output += "ANSWERS: None recorded\n"
 
         # Write full chat history
-        if self.chat_history:
+        if self.full_chat_history:
             output += "\n"
             output += "FULL CHAT HISTORY:\n"
             output += "=" * 40 + "\n"
-            for msg in self.chat_history:
+            for msg in self.full_chat_history:
                 output += f"{msg['role'].upper()}: {msg['content']}\n"
             output += "=" * 40 + "\n"
 

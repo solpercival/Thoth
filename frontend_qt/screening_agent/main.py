@@ -47,6 +47,8 @@ class AutoDialControl(QWidget):
         # AD Start button
         self.start_button = QPushButton("Start")
         self.start_button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.start_button.setEnabled(False)
+        self.start_button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
         self.start_stop_button_layout.addWidget(self.start_button)
         self.start_button.pressed.connect(self._on_auto_dial_start_button_pressed)
 
@@ -63,6 +65,24 @@ class AutoDialControl(QWidget):
         layout.addWidget(self.status_label)
         layout.addLayout(self.start_stop_button_layout)
 
+
+    def enable_start(self) -> None:
+        """Enable the start button when backend is running."""
+        if not self.is_auto_dialing:
+            self.start_button.setEnabled(True)
+            self.start_button.setStyleSheet("background-color: #28a745; padding: 10px; border-radius: 5px;")
+            self.status_label.setText("Status: Ready")
+
+    def disable_start(self) -> None:
+        """Disable the start button when backend is not running."""
+        self.is_auto_dialing = False
+        self.poll_timer.stop()
+        self.current_session_id = None
+        self.current_phone_number = None
+        self.start_button.setEnabled(False)
+        self.start_button.setText("Start")
+        self.start_button.setStyleSheet("background-color: #6c757d; padding: 10px; border-radius: 5px;")
+        self.status_label.setText("Status: Backend not running")
 
     def _on_auto_dial_start_button_pressed(self) -> None:
         self.is_auto_dialing = not self.is_auto_dialing
@@ -192,8 +212,8 @@ class AutoDialControl(QWidget):
             if response.status_code == 200:
                 data = response.json()
                 result = data.get('result', 'unknown')
-                if result in ('no_answer', 'failed'):
-                    print(f"[AUTO-DIAL] Call failed ({result}): {self.current_phone_number}")
+                if result in ('no_answer', 'failed', 'callback'):
+                    print(f"[AUTO-DIAL] Call requires follow-up ({result}): {self.current_phone_number}")
                     if self.failed_list:
                         self.failed_list.add_number(self.current_phone_number)
                 else:
@@ -332,8 +352,8 @@ class PhoneList(QWidget):
             if response.status_code == 200:
                 data = response.json()
                 result = data.get('result', 'unknown')
-                if result in ('no_answer', 'failed'):
-                    print(f"[FRONTEND] Call failed ({result}): {self.current_phone_number}")
+                if result in ('no_answer', 'failed', 'callback'):
+                    print(f"[FRONTEND] Call requires follow-up ({result}): {self.current_phone_number}")
                     if self.failed_list:
                         self.failed_list.add_number(self.current_phone_number)
                 else:
@@ -698,6 +718,7 @@ class MainWindow(QWidget):
             # Logic
             self._stop_backend()
             self.is_backend_on = False
+            self.auto_dial.disable_start()
         
 
 
@@ -766,6 +787,7 @@ class MainWindow(QWidget):
             self.button.setText("Start (Failed)")
             self.button.setStyleSheet("background-color: #ffc107; padding: 10px; border-radius: 5px;")
             self.button.setEnabled(True)
+            self.auto_dial.disable_start()
 
             # Clean up the process
             if self.process:
@@ -786,6 +808,7 @@ class MainWindow(QWidget):
                 self.button.setStyleSheet("background-color: #dc3545; padding: 10px; border-radius: 5px;")
                 self.button.setEnabled(True)
                 self.status.setText("Status: Application is running!")
+                self.auto_dial.enable_start()
         except (requests.ConnectionError, requests.Timeout):
             # Backend not ready yet, keep polling
             pass

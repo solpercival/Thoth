@@ -38,3 +38,7 @@ Call logs are saved automatically after each call:
 - **Thoth:** `backend/thoth/core/call_assistant/logs/`
 
 Both GUIs have an "Open Logs" button to view them in File Explorer.
+
+## Note
+
+We are using the frontend_qt not frontend

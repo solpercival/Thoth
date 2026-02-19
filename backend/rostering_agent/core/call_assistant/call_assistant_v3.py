@@ -85,7 +85,7 @@ LLM_MODEL = os.getenv("LLM_MODEL")
 LOG_PREFIX = "[CALL_ASSISTANT_V3.PY]"
 
 # Test mode configuration
-TEST_MODE = True
+TEST_MODE = False
 TEST_NUMBER = "0411 305 401"  # Replace with your test number
 
 

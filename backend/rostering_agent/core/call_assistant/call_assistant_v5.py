@@ -657,7 +657,6 @@ class CallAssistantV5:
         self.stop_event = Event()
 
         self.whisper_client = SystemAudioWhisperFastClient(
-            model="base",
             on_phrase_complete=self.on_phrase_complete
         )
 
