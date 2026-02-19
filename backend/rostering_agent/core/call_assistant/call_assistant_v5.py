@@ -631,7 +631,7 @@ class CallAssistantV5:
         self._log(f"ASSISTANT: {text}")
         self.transcript_log.append({"role": "assistant", "content": text})
         try:
-            tts_client = TTSClient(output_device_name="CABLE Input")
+            tts_client = TTSClient(output_device_name=os.getenv("TTS_OUTPUT_DEVICE", "CABLE Input"))
             tts_client.text_to_speech(text)
         except Exception as e:
             self._log(f"TTS error: {e}")

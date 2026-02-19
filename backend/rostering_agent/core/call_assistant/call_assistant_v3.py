@@ -360,7 +360,7 @@ class CallAssistantV3:
     def _speak(self, text: str) -> None:
         print(f"{LOG_PREFIX} [ASSISTANT] {text}")
         try:
-            tts_client = TTSClient(output_device_name="CABLE Input")
+            tts_client = TTSClient(output_device_name=os.getenv("TTS_OUTPUT_DEVICE", "CABLE Input"))
             tts_client.text_to_speech(text)
         except Exception as e:
             print(f"{LOG_PREFIX} TTS error: {e}")

@@ -537,7 +537,7 @@ class ScreeningAgentV2:
     def _run(self) -> None:
         """Internal method that runs the screening flow."""
         # Initialize clients
-        self.tts_client = TTSClient(output_device_name="CABLE Input")
+        self.tts_client = TTSClient(output_device_name=os.getenv("TTS_OUTPUT_DEVICE", "CABLE Input"))
         self.llm_client = OllamaClient(
             model=os.getenv("LLM_MODEL", "qwen3:8b"),
             system_prompt=""  # Will be set dynamically

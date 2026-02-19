@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -133,7 +134,7 @@ class CallAssistant:
 
         # Convert it to TTS and pipe it through 3CX
         print("[PLAYING LLM RESPONSE]")
-        tts_client:TTSClient = TTSClient(output_device_name="CABLE Input")
+        tts_client:TTSClient = TTSClient(output_device_name=os.getenv("TTS_OUTPUT_DEVICE", "CABLE Input"))
         tts_client.text_to_speech("Thank you for waiting " + llm_response)
 
         # 
