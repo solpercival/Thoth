@@ -298,22 +298,22 @@ class MainWindow(QWidget):
     # ACTION FUNCTIONS
     ###############################################################################
     def _start_backend(self):
-        # Get the path to app_v3.py
+        # Get the path to the canonical Thoth app
         project_root = Path(__file__).parent.parent.parent  # thoth -> frontend_qt -> Thoth
-        script_path = project_root / "backend" / "rostering_agent" / "core" / "call_assistant" / "app_v5.py"
+        script_path = project_root / "backend" / "apps" / "thoth" / "app.py"
 
         # Get python from venv
         if sys.platform == "win32":
-            python_exe = project_root / ".venv" / "Scripts" / "python.exe"
+            python_exe = project_root / "venv" / "Scripts" / "python.exe"
         else:
-            python_exe = project_root / ".venv" / "bin" / "python"
+            python_exe = project_root / "venv" / "bin" / "python"
 
         print(f"[FRONTEND QT] Starting: {python_exe} {script_path}")
 
         # Start the process (non-blocking)
         self.process = subprocess.Popen(
             [str(python_exe), str(script_path)],
-            cwd=str(script_path.parent),  # Run from the script's directory
+            cwd=str(project_root),  # Run from project root so imports work correctly
         )
 
         # Start health check polling
