@@ -18,24 +18,26 @@ Both agents use the same core architecture: a 2-state LLM-driven state machine w
 
 ```
 Thoth/
-├── backend/
-│   ├── odin/               Odin screening agent
-│   ├── thoth/              Thoth call assistant + Ezaango automation
-│   ├── whisper_client/     Speech-to-text (shared)
-│   ├── tts_client/         Text-to-speech (shared)
-│   └── ollama_client/      LLM client (shared)
-├── frontend_qt/            PyQt6 desktop GUIs
-├── frontend/               Electron/React frontend (alternative)
-├── install_deps.bat        Dependency installer
-├── ARCHITECTURE.md         Detailed system architecture docs
-└── .env                    Secrets and configuration (gitignored)
+├── backend/                # Python server logic
+│   ├── apps/               # Runtime entry points (Thoth & Odin)
+│   ├── services/           # Shared infrastructure (LLM, audio, notifications)
+│   ├── workflows/          # Business orchestration
+│   ├── ollama_client/      # (legacy) LLM client
+│   ├── whisper_client/     # (legacy) Speech-to-text
+│   ├── tts_client/         # (legacy) Text-to-speech
+│   └── requirements.txt    # Python dependencies
+├── frontend_qt/            # PyQt6 desktop GUIs
+├── scripts/                # Startup and service scripts
+├── ARCHITECTURE.md         # Detailed technical breakdown
+├── README.md               # This file
+└── .env                    # Secrets and configuration (gitignored)
 ```
 
 ## Logs
 
-Call logs are saved automatically after each call:
-- **Odin:** `backend/odin/screening_agent/logs/`
-- **Thoth:** `backend/thoth/core/call_assistant/logs/`
+Call logs are saved automatically after each call in:
+- **Odin:** `backend/rostering_agent/screening_agent/logs/`
+- **Thoth:** `backend/rostering_agent/core/call_assistant/logs/`
 
 Both GUIs have an "Open Logs" button to view them in File Explorer.
 
